@@ -112,7 +112,7 @@ function shareXp(amount: number): void {
 
 function gainXp(hero: Hero, amount: number): void {
   const p = hero.player;
-  p.xp += amount;
+  p.xp += amount * (hero.stats.xpGain ?? 1);
   while (p.xp >= xpToNextLevel(p.level)) {
     p.xp -= xpToNextLevel(p.level);
     p.level++;

@@ -73,9 +73,9 @@ test('online: a friend joins the room and shows up in the lobby', () => {
 
 test('online: the friend plays a full minute from snapshots, moves, and picks cards', () => {
   const { host, friend, link } = setUpRoom();
-  sendAsFriend(link, { t: 'class', classId: 'merchant' });
+  sendAsFriend(link, { t: 'class', classId: 'bounty_hunter' });
   link.pump();
-  assert.equal(host.sr.net.players[1].classId, 'merchant', 'class change reaches the host');
+  assert.equal(host.sr.net.players[1].classId, 'bounty_hunter', 'class change reaches the host');
 
   host.sr.startOnlineGame();
   assert.equal(host.sr.scene, 'play');
@@ -107,7 +107,7 @@ test('online: the friend plays a full minute from snapshots, moves, and picks ca
   assert.ok(friendPicks > 0 && levelUpsSeenByFriend > 0, 'the friend sees level-ups and picks cards');
   const remoteHero = host.sr.run.heroes[1];
   assert.ok(Object.keys(remoteHero.cards).length > 0, 'the friend\'s picks land on their hero');
-  assert.ok(Object.keys(remoteHero.cards).every((id) => remoteHero.cls.cards.some((c) => c.id === id)), 'merchant cards only');
+  assert.ok(Object.keys(remoteHero.cards).every((id) => remoteHero.cls.cards.some((c) => c.id === id)), 'bounty hunter cards only');
 
   // the friend's screen mirrors the host's world
   const fr = friend.sr.run;

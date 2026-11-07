@@ -12,6 +12,7 @@ import { endRun, newRunWith } from '../game/run';
 import { applyPick, tryReroll } from '../progression/cards';
 import { joinButtons, levelCardRects, lobbyButtons, rerollButtonRect, resultButtons } from '../render/screens';
 import { ageVisualEffects } from '../world/effects';
+import { clearLastUnlocked, isClassUnlocked, recordRun, unlockText } from '../meta/progress';
 import { isPredicting, nextInputSeq, placeLocalHero, predictLocalHero, reconcile, resetPrediction } from './prediction';
 import { decodeSnapshot, encodeSnapshot, parseMessage, type Snapshot } from './snapshot';
 import { CODE_LENGTH, cleanRoomCode, joinRoom, openRoom, randomRoomCode, type Conn, type PeerHandle } from './transport';
@@ -88,7 +89,7 @@ export function hostGame(classId: string, openNetwork = true): void {
   reset();
   net.mode = 'host';
   net.code = randomRoomCode();
-  net.players = [{ name: nameFor(0), classId }];
+  net.players = [{ name: nameFor(0), classId: playableClass(classId) }];
   remotes = [null];
   net.notice = '';
   setScene(SCENE.LOBBY);
@@ -243,7 +244,7 @@ export function joinGame(code: string, classId: string): void {
     .then(({ conn, handle }) => {
       if (net.mode !== 'client') { handle.close(); return; } // gave up while connecting
       peer = handle;
-      connectToHost(conn, classId);
+      connectToHost(conn, playableClass(classId));
     })
     .catch((err: Error) => { if (net.mode === 'client') net.status = err.message; });
 }
@@ -303,6 +304,11 @@ function applySnapshot(snap: Snapshot): void {
   setRun(next);
   sinceSnapshot = 0;
   const shown: SceneId = snap.scene === SCENE.PAUSE ? SCENE.PLAY : snap.scene;
+  // the run just ended: save this player's own progress (the host saves theirs in endRun)
+  if (shown === SCENE.RESULT && scene !== SCENE.RESULT && next.result && mine) {
+    recordRun({ classId: mine.classId, wavesCleared: next.wavesCleared, bossesKilled: next.bossesKilled, win: next.result.win });
+  }
+  if (shown === SCENE.PLAY && scene === SCENE.RESULT) clearLastUnlocked();
   if (scene !== shown) setScene(shown);
   if (shown === SCENE.RESULT) resetPrediction();
   smoothPositions(0);
@@ -357,9 +363,20 @@ export function updateLobby(): void {
     let next = -1;
     CLASS_ORDER.forEach((_, i) => { if (keysPressed[String(i + 1)]) next = i; });
     const current = CLASS_ORDER.indexOf(me.classId);
-    if (keysPressed.arrowright || keysPressed.d) next = (current + 1) % CLASS_ORDER.length;
-    if (keysPressed.arrowleft || keysPressed.a) next = (current + CLASS_ORDER.length - 1) % CLASS_ORDER.length;
-    if (next >= 0) setMyClass(CLASS_ORDER[next]);
+    // arrows step through the classes this player has unlocked
+    const stepTo = (dir: number): number => {
+      for (let k = 1; k <= CLASS_ORDER.length; k++) {
+        const i = (current + dir * k + CLASS_ORDER.length * k) % CLASS_ORDER.length;
+        if (isClassUnlocked(CLASS_ORDER[i])) return i;
+      }
+      return current;
+    };
+    if (keysPressed.arrowright || keysPressed.d) next = stepTo(1);
+    if (keysPressed.arrowleft || keysPressed.a) next = stepTo(-1);
+    if (next >= 0) {
+      if (isClassUnlocked(CLASS_ORDER[next])) setMyClass(CLASS_ORDER[next]);
+      else net.status = CLASSES[CLASS_ORDER[next]].name + ' is locked: ' + unlockText(CLASS_ORDER[next]);
+    }
   }
   const b = lobbyButtons();
   if (keysPressed.escape || (mouse.leftPressed && mouseIn(b.leave))) { leaveOnline(); return; }
@@ -458,6 +475,9 @@ export function netTick(dt: number): void {
   if (net.mode === 'host') hostTick(dt);
   else if (net.mode === 'client') clientTick(dt);
 }
+
+/** `classId` if this player has unlocked it, otherwise their first open class. */
+export const playableClass = (classId: string): string => (isClassUnlocked(classId) ? classId : CLASS_ORDER.find(isClassUnlocked) ?? classId);
 
 /** Opened with ?room=CODE: join straight away. */
 export function joinFromUrl(classId: string): void {

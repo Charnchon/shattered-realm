@@ -122,6 +122,7 @@ export function recalcStats(): void {
     extraProjectiles: (relicLevel('echo') >= 3 ? 1 : 0) + (relicLevel('echo') >= 5 ? 1 : 0),
     pickupRadius: 70 * (1 + 0.2 * relicLevel('magnet')),
     luck: (base.luck || 0) + 5 * relicLevel('clover'),
+    xpGain: 1,
     cooldownMul: Math.max(0.5, 1 - 0.05 * relicLevel('ink')),
     lifesteal: base.lifesteal || 0,
     ultRate: 1,

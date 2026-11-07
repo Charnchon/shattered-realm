@@ -8,6 +8,7 @@ import { formatTime } from '../core/math';
 import { DEBUG, menuSelection, run, totalArmor } from '../core/state';
 import { CLASSES, CLASS_ORDER } from '../classes/registry';
 import { CARD_MAX_LEVEL, OFFER_SIZE, PART_LABEL, canReroll, cardDef, relicDef, rerollLabel, upgradeLabel } from '../progression/cards';
+import { isClassUnlocked, lastUnlocked, unlockText } from '../meta/progress';
 import { net } from '../net/session';
 import { drawButton, drawDashedRect, drawDiamond, drawPanel, drawPixelText, drawText, drawWrappedText } from './primitives';
 
@@ -163,35 +164,31 @@ function drawSlotStrip(): void {
 
 // ------------------------------------------------------------ class select
 
-const MENU_CARD = { w: 212, h: 300, gap: 16, y: 150 };
+/** A row of class tiles; the highlighted class is described in the panel below. */
+const MENU_TILE = { w: 140, h: 96, gap: 12, y: 118 };
+const MENU_DETAIL = { x: 30, y: 228, w: 900, h: 224 };
 
 export function menuCardRects(): Rect[] {
-  const { w, h, gap, y } = MENU_CARD;
+  const { w, h, gap, y } = MENU_TILE;
   const n = CLASS_ORDER.length, x0 = VIEW_W / 2 - (n * w + (n - 1) * gap) / 2;
   return CLASS_ORDER.map((_, i) => ({ x: x0 + i * (w + gap), y, w, h }));
 }
 
 export function drawMenu(): void {
-  ctx.fillStyle = COLOR.bg;
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  for (let i = 0; i < 60; i++) {
-    const x = (i * 157) % VIEW_W, y = (i * 89) % VIEW_H;
-    ctx.fillStyle = i % 3 ? '#1f1828' : '#2a2036';
-    ctx.fillRect(x, y, 3, 3);
-  }
-  drawPixelText('Shattered Realm', VIEW_W / 2, 74, 46, COLOR.text, 'center');
-  drawText('Playable prototype · 4 test classes · placeholder shapes, no art', VIEW_W / 2, 104, 14, COLOR.muted, 'center');
-  drawPixelText('Choose a class', VIEW_W / 2, 136, 15, COLOR.gold, 'center');
+  drawMenuBackdrop();
+  drawPixelText('Shattered Realm', VIEW_W / 2, 66, 44, COLOR.text, 'center');
+  const open = CLASS_ORDER.filter(isClassUnlocked).length;
+  drawText('Prototype · ' + open + ' of ' + CLASS_ORDER.length + ' classes unlocked · placeholder shapes, no art', VIEW_W / 2, 96, 13, COLOR.muted, 'center');
   const rects = menuCardRects();
-  CLASS_ORDER.forEach((id, i) => drawClassCard(CLASSES[id], rects[i], i, menuSelection === i));
+  CLASS_ORDER.forEach((id, i) => drawClassTile(CLASSES[id], rects[i], i, menuSelection === i));
+  drawClassDetail(CLASSES[CLASS_ORDER[menuSelection]]);
   const online = menuOnlineButtons();
   drawButton(online.host, 'Create room · C', COLOR.teal, COLOR.teal, 21);
   drawButton(online.join, 'Join room · J', COLOR.gold, COLOR.gold, 21);
-  drawText('Online co-op: up to ' + 4 + ' players', VIEW_W - 103, 98, 10, COLOR.dim, 'center');
-  if (net.notice) drawText(net.notice, VIEW_W / 2, 466, 13, COLOR.ember, 'center');
-  drawText('WASD move · Left click Strike · Right click Heavy Strike · Space dash · Q Ultimate · Esc pause', VIEW_W / 2, 488, 13, COLOR.text, 'center');
-  const godHint = 'Keyboard and mouse needed. Press 1–4 or click a class to play solo. Press G for test mode (you can\'t die): ' + (DEBUG.god ? 'ON' : 'off');
-  drawText(godHint, VIEW_W / 2, 510, 12, DEBUG.god ? COLOR.gold : COLOR.dim, 'center');
+  if (net.notice) drawText(net.notice, VIEW_W / 2, 470, 13, COLOR.ember, 'center');
+  drawText('WASD move · Left click Strike · Right click Heavy Strike · Space dash · Q Ultimate · Esc pause', VIEW_W / 2, 490, 13, COLOR.text, 'center');
+  const godHint = 'Click a class or press 1–' + CLASS_ORDER.length + ' to play solo. Press G for test mode (can\'t die, unlocks don\'t count): ' + (DEBUG.god ? 'ON' : 'off');
+  drawText(godHint, VIEW_W / 2, 512, 12, DEBUG.god ? COLOR.gold : COLOR.dim, 'center');
 }
 
 /** "Create room" / "Join room", top right of the class select screen. */
@@ -294,26 +291,60 @@ function drawMenuBackdrop(): void {
   }
 }
 
-function drawClassCard(cls: ClassDef, rect: Rect, index: number, selected: boolean): void {
-  const y0 = rect.y - (selected ? 4 : 0);
-  drawPanel(rect.x, y0, rect.w, rect.h, selected ? '#2a2138' : COLOR.panel, selected ? cls.color : COLOR.line, selected ? 3 : 2, cls.color);
+/** A small class tile: colour badge, hotkey, name and type. Locked classes are dimmed with a padlock. */
+function drawClassTile(cls: ClassDef, rect: Rect, index: number, selected: boolean): void {
+  const locked = !isClassUnlocked(cls.id), y0 = rect.y - (selected ? 4 : 0);
+  if (locked) {
+    drawPanel(rect.x, y0, rect.w, rect.h, 'rgba(20,16,25,0.85)', null);
+    drawDashedRect(rect.x + 1, y0 + 1, rect.w - 2, rect.h - 2, [5, 4], selected ? COLOR.gold : COLOR.frame, selected ? 2.5 : 1.5);
+  } else {
+    drawPanel(rect.x, y0, rect.w, rect.h, selected ? '#2a2138' : COLOR.panel, selected ? cls.color : COLOR.line, selected ? 3 : 2, cls.color);
+  }
+  const cx = rect.x + rect.w / 2;
+  ctx.globalAlpha = locked ? 0.35 : 1;
   ctx.fillStyle = cls.color;
-  ctx.beginPath(); ctx.arc(rect.x + 30, y0 + 36, 14, 0, TAU); ctx.fill();
-  drawPixelText(String(index + 1), rect.x + 30, y0 + 41, 13, COLOR.ink, 'center');
-  drawPixelText(cls.name, rect.x + 52, y0 + 34, 20, COLOR.text);
-  drawText(cls.role, rect.x + 52, y0 + 51, 11, COLOR.muted);
-  let y = y0 + 76;
-  for (const line of cls.kit) y = drawWrappedText(line, rect.x + 14, y, rect.w - 26, 14, 11.5, COLOR.muted) + 19;
-  // rating bars
-  y = y0 + rect.h - 70;
+  ctx.beginPath(); ctx.arc(cx, y0 + 32, 17, 0, TAU); ctx.fill();
+  drawPixelText(cls.name[0], cx, y0 + 39, 17, COLOR.ink, 'center');
+  ctx.globalAlpha = 1;
+  if (locked) drawPadlock(cx, y0 + 32, COLOR.gold);
+  drawPixelText(String(index + 1), rect.x + 12, y0 + 18, 12, COLOR.dim, 'center');
+  drawPixelText(cls.name, cx, y0 + 68, 15, locked ? COLOR.dim : COLOR.text, 'center');
+  drawText(locked ? 'Locked' : cls.role.split(' · ')[0], cx, y0 + 85, 10, locked ? COLOR.gold : COLOR.muted, 'center');
+}
+
+/** The highlighted class: kit, ratings, and how to play or unlock it. */
+function drawClassDetail(cls: ClassDef): void {
+  const { x, y, w, h } = MENU_DETAIL, locked = !isClassUnlocked(cls.id);
+  drawPanel(x, y, w, h, COLOR.panel, COLOR.line, 2, locked ? COLOR.gold : cls.color);
+  drawPixelText(cls.name, x + 24, y + 40, 26, locked ? COLOR.muted : COLOR.text);
+  drawText(cls.role + ' · Ultimate: ' + cls.ultName, x + 24, y + 62, 12, COLOR.muted);
+  cls.kit.forEach((line, i) => drawText(line, x + 24, y + 92 + i * 21, 13, locked ? COLOR.dim : COLOR.text));
+  const rx = x + 600;
+  drawPixelText('Stats', rx, y + 40, 14, COLOR.muted);
   Object.entries(cls.ratings).forEach(([label, value], j) => {
-    const rowY = y + j * 12;
-    drawText(label, rect.x + 14, rowY + 8, 10, COLOR.dim);
+    const rowY = y + 58 + j * 22;
+    drawText(label, rx, rowY + 9, 12, COLOR.dim);
     for (let s = 0; s < 5; s++) {
-      ctx.fillStyle = s < value ? cls.color : COLOR.line;
-      ctx.fillRect(rect.x + 100 + s * 18, rowY, 14, 7);
+      ctx.fillStyle = s < value ? (locked ? COLOR.frame : cls.color) : COLOR.line;
+      ctx.fillRect(rx + 110 + s * 30, rowY, 26, 9);
     }
   });
+  if (locked) {
+    drawPadlock(x + 34, y + h - 24, COLOR.gold);
+    drawPixelText('How to unlock: ' + unlockText(cls.id), x + 52, y + h - 18, 14, COLOR.gold);
+  } else {
+    drawText('Click its tile or press its number to play solo · C to host a room with this class', x + 24, y + h - 18, 12, COLOR.teal);
+  }
+}
+
+function drawPadlock(cx: number, cy: number, color: string): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(cx, cy - 4, 6, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.fillRect(cx - 9, cy - 4, 18, 13);
+  ctx.fillStyle = COLOR.ink;
+  ctx.fillRect(cx - 1.5, cy, 3, 5);
 }
 
 // ------------------------------------------------------------ pause
@@ -409,6 +440,10 @@ export function drawResult(): void {
     drawPixelText(String(value), VIEW_W / 2 + 205, 204 + i * 26, 15, COLOR.text, 'right');
   });
   drawText('Rewards (shop and skill tree come later): +' + result.gold + ' gold · +' + result.exp + ' Specialist EXP', VIEW_W / 2, 390, 13, COLOR.gold, 'center');
+  if (lastUnlocked.length) {
+    const names = lastUnlocked.map((id) => CLASSES[id]?.name ?? id).join(' and ');
+    drawPixelText('New class unlocked: ' + names + '!', VIEW_W / 2, 486, 22, COLOR.gold, 'center');
+  }
   const b = resultButtons();
   if (net.mode === 'client') {
     drawText('Waiting for the host…', b.again.x + b.again.w / 2, b.again.y + 27, 13, COLOR.dim, 'center');

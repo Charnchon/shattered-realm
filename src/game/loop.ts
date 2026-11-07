@@ -17,6 +17,8 @@ import {
   updateClientScene, updateHostResult, updateJoin, updateLobby, updateOnlineMenu,
 } from '../net/session';
 import { encodeSnapshot } from '../net/snapshot';
+import * as progress from '../meta/progress';
+import { isClassUnlocked, unlockText } from '../meta/progress';
 import { drawWorld } from '../render/world';
 import { hurtHero, hurtHeroOverTime, reviveHero } from '../world/combat';
 import { updateEffects } from '../world/effects';
@@ -28,10 +30,9 @@ import { updateWave } from '../world/waves';
 import { updateZones } from '../world/zones';
 import { botThink } from './bot';
 import { applyInput, readLocalInput } from './controls';
-import { newRun, newRunWith } from './run';
+import { endRun, newRun, newRunWith } from './run';
 
 const MAX_FRAME_DT = 0.05;
-const MENU_KEYS = ['1', '2', '3', '4'];
 const OFFER_KEYS = ['1', '2', '3'];
 
 /** Is this hero played by the test bot? */
@@ -86,6 +87,13 @@ function autoPickForBots(): void {
   }
 }
 
+/** Start a single-player run with the class at `index`, unless it's still locked. */
+function startSolo(index: number): void {
+  const id = CLASS_ORDER[index];
+  if (isClassUnlocked(id)) { net.notice = ''; newRun(id); return; }
+  net.notice = CLASSES[id].name + ' is locked. ' + unlockText(id) + ' to unlock it.';
+}
+
 /** Index of the rect under the mouse, or -1. */
 const hoveredIndex = (rects: Rect[]): number => rects.findIndex((r) => mouseIn(r));
 
@@ -93,11 +101,11 @@ const SCENE_UPDATE: Record<SceneId, (dt: number) => void> = {
   menu() {
     const rects = menuCardRects(), hovered = hoveredIndex(rects), count = CLASS_ORDER.length;
     if (hovered >= 0) setMenuSelection(hovered);
-    if (mouse.leftPressed && hovered >= 0) newRun(CLASS_ORDER[hovered]);
-    MENU_KEYS.forEach((k, i) => { if (keysPressed[k]) newRun(CLASS_ORDER[i]); });
+    if (mouse.leftPressed && hovered >= 0) startSolo(hovered);
+    CLASS_ORDER.forEach((_, i) => { if (keysPressed[String(i + 1)]) { setMenuSelection(i); startSolo(i); } });
     if (keysPressed.arrowright || keysPressed.d) setMenuSelection((menuSelection + 1) % count);
     if (keysPressed.arrowleft || keysPressed.a) setMenuSelection((menuSelection + count - 1) % count);
-    if (keysPressed.enter || keysPressed.space) newRun(CLASS_ORDER[menuSelection]);
+    if (keysPressed.enter || keysPressed.space) startSolo(menuSelection);
     if (keysPressed.g) DEBUG.god = !DEBUG.god;
     const online = menuOnlineButtons();
     if (keysPressed.c || (mouse.leftPressed && mouseIn(online.host))) hostGame(CLASS_ORDER[menuSelection]);
@@ -218,6 +226,10 @@ function installTestHooks(): void {
     net, hostGame, acceptConnection, connectToHost, startOnlineGame, leaveOnline, encodeSnapshot,
     /** Held / pressed-this-frame keys, so tests can play like a person. */
     keysDown, keysPressed,
+    /** Saved progress and unlocks: __SR.progress.unlockAll(), .resetProgress(), .getProgress(). */
+    progress,
+    /** End the current run right away (tests). */
+    endRunForTest: endRun,
     get run() { return run; },
     /** @deprecated alias of `run`, kept for older test scripts. */
     get G() { return run; },

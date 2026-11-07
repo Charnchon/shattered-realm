@@ -1,8 +1,9 @@
 // ============================================================ run lifecycle
 import type { Hero, HeroInput, Player, Run, Stats } from '../types';
 import { ARENA_H, ARENA_W, SCENE } from '../core/constants';
-import { recalcStats, run, setRun, setScene, withHero } from '../core/state';
+import { DEBUG, localHero, recalcStats, run, setRun, setScene, withHero } from '../core/state';
 import { CLASSES } from '../classes/registry';
+import { clearLastUnlocked, recordRun } from '../meta/progress';
 import { spawnEnemy } from '../world/enemies';
 import { findSpawnPosition, startWave } from '../world/waves';
 
@@ -109,6 +110,7 @@ export function newRun(classId: string): void {
 export function newRunWith(specs: HeroSpec[], localHero: number): void {
   const heroes = specs.map((spec, i) => createHero(i, spec, specs.length));
   setRun(createRunShell(heroes, localHero));
+  clearLastUnlocked();
   for (const hero of heroes) {
     withHero(hero, () => {
       recalcStats();
@@ -131,5 +133,10 @@ export function endRun(win: boolean): void {
   const gold = Math.round(10 * run.wavesCleared + 50 * run.bossesKilled + (win ? 150 : 0));
   const exp = 20 * run.wavesCleared + 80 * run.bossesKilled + (win ? 200 : 0);
   run.result = { win, gold, exp, time: run.time };
+  // save this screen's player's progress (test mode and bot runs don't count)
+  const me = localHero();
+  if (!DEBUG.god && !DEBUG.bot && !me.bot) {
+    recordRun({ classId: me.classId, wavesCleared: run.wavesCleared, bossesKilled: run.bossesKilled, win });
+  }
   setScene(SCENE.RESULT);
 }

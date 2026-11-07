@@ -56,6 +56,8 @@ export interface Stats {
   extraProjectiles: number;
   pickupRadius: number;
   luck: number;
+  /** XP multiplier (1 = normal). */
+  xpGain: number;
   cooldownMul: number;
   lifesteal: number;
   ultRate: number;

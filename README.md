@@ -1,8 +1,20 @@
 # Shattered Realm – playable prototype
 
 A wave-survival action game for the browser, written in TypeScript. No art yet: everything is drawn with simple
-shapes on a canvas. There are 4 test classes (Vampire, Merchant, Necromancer, Cleric) with 16 cards each, 12 waves
+shapes on a canvas. There are 6 classes with 16 cards each: Traveler, Oathknight, Bounty Hunter and Cleric to start, plus Vampire and Necromancer to unlock. 12 waves
 and 4 bosses.
+
+## Docs
+
+| File | What's in it |
+|---|---|
+| [roguelike-game-design.md](roguelike-game-design.md) | The full design and build plan (the target game) |
+| [docs/roadmap.md](docs/roadmap.md) | The phased roadmap: what is done, what is next |
+| [docs/plan-status.md](docs/plan-status.md) | What the prototype has built so far vs. the plan |
+| [docs/architecture.md](docs/architecture.md) | How the code fits together |
+| [docs/multiplayer.md](docs/multiplayer.md) | Online co-op: rooms, snapshots, prediction |
+| [docs/development.md](docs/development.md) | Setup, tests, branches and deploy, how to add content |
+| [CLAUDE.md](CLAUDE.md) | Context and rules for AI assistants working in this repo |
 
 ## Setup, build and play
 
@@ -55,6 +67,7 @@ src/
   render/       drawing primitives, world, HUD, screens (level up, menu, pause, result)
   game/         run lifecycle, controls, test bot, main loop
   net/          online co-op: PeerJS transport, snapshots, rooms / lobby / host / client
+  meta/         saved progress and class unlocks (localStorage)
 scripts/        build script
 tests/          headless runner + smoke tests
 ```
