@@ -1,0 +1,5 @@
+node_modules/
+
+# build outputs (regenerate with `npm run build`)
+game.js
+index.html
