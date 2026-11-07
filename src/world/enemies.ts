@@ -2,9 +2,9 @@
 import type { Enemy, EnemyTypeId, Mob, StatusTimers } from '../types';
 import { ARENA_H, ARENA_W, TAU } from '../core/constants';
 import { angleDiff, clamp, randRange } from '../core/math';
-import { run } from '../core/state';
+import { asHero, nearestHero, partyScale, run } from '../core/state';
 import { updateBoss } from './bosses';
-import { hitEnemy, hurtPlayer } from './combat';
+import { hitEnemy, hurtHero } from './combat';
 import { spawnBurst } from './effects';
 import { fireEnemyShot } from './projectiles';
 
@@ -58,9 +58,11 @@ export function createStatusTimers(): StatusTimers {
 
 export function spawnEnemy(type: EnemyTypeId, x: number, y: number, elite: boolean): Mob {
   const def = ENEMY_TYPES[type], wave = Math.max(1, run.wave);
-  const hpMul = 1 + 0.24 * (wave - 1), damageMul = 1 + 0.1 * (wave - 1);
+  const hpMul = (1 + 0.24 * (wave - 1)) * partyScale(0.5), damageMul = 1 + 0.1 * (wave - 1);
   const hp = def.hp * hpMul * (elite ? ELITE.hp : 1);
+  const target = nearestHero(x, y)?.player ?? run.player;
   const e: Mob = {
+    id: run.nextId++,
     type, x, y,
     r: def.r * (elite ? ELITE.size : 1),
     hp,
@@ -71,7 +73,7 @@ export function spawnEnemy(type: EnemyTypeId, x: number, y: number, elite: boole
     elite: !!elite, undead: !!def.undead, hasShield: !!def.shield, color: def.color,
     contactCooldown: 0, flash: 0, attackTimer: randRange(0.8, 2.2),
     ...createStatusTimers(),
-    face: Math.atan2(run.player.y - y, run.player.x - x), // spawn facing the player
+    face: Math.atan2(target.y - y, target.x - x), // spawn facing the nearest player
     wobble: randRange(0, TAU), shieldBroken: false, dead: false, boss: false, knockX: 0, knockY: 0,
   };
   run.enemies.push(e);
@@ -148,7 +150,7 @@ export function updateEnemies(dt: number): void {
     e.contactCooldown -= dt;
     if (e.bleedTime > 0) {
       e.bleedTime -= dt;
-      hitEnemy(e, e.bleedDps * dt, { dot: true, silent: true });
+      asHero(e.bleedOwner, () => hitEnemy(e, e.bleedDps * dt, { dot: true, silent: true }));
       if (e.dead) continue;
     }
     if (e.boss) updateBoss(e, dt);
@@ -161,8 +163,12 @@ function tickStatusTimers(e: Mob, dt: number): void {
 }
 
 function updateEnemy(e: Mob, dt: number): void {
-  const p = run.player, def = ENEMY_TYPES[e.type];
+  const def = ENEMY_TYPES[e.type];
   tickStatusTimers(e, dt);
+  // Chase the nearest living hero. With everyone down the run is over, so idle.
+  const targetHero = nearestHero(e.x, e.y);
+  if (!targetHero) return;
+  const p = targetHero.player;
 
   // Steering: chase the player, or a victim while charmed, then apply status effects.
   let tx = p.x, ty = p.y, charmTarget: Enemy | null = null;
@@ -206,14 +212,15 @@ function updateEnemy(e: Mob, dt: number): void {
     const touching = charmTarget && Math.hypot(charmTarget.x - e.x, charmTarget.y - e.y) < e.r + charmTarget.r + 4;
     if (touching && e.contactCooldown <= 0) {
       e.contactCooldown = 0.5;
-      hitEnemy(charmTarget, e.damage * 1.5, { tag: 'charm' });
+      // credit the charm hit to the nearest hero (charms come from the players)
+      asHero(targetHero.idx, () => hitEnemy(charmTarget, e.damage * 1.5, { tag: 'charm' }));
     }
     return;
   }
   if (def.bomber && distToPlayer < 34) { explodeBomber(e); return; }
   if (distToPlayer < e.r + p.r && e.contactCooldown <= 0) {
     e.contactCooldown = 0.7;
-    hurtPlayer(e.damage);
+    hurtHero(targetHero, e.damage);
   }
 }
 
@@ -228,5 +235,7 @@ function explodeBomber(e: Mob): void {
   e.dead = true;
   e.hp = 0;
   spawnBurst(e.x, e.y, '#ff7a4a', 16, 140);
-  if (Math.hypot(run.player.x - e.x, run.player.y - e.y) < 48) hurtPlayer(e.damage);
+  for (const h of run.heroes) {
+    if (!h.down && !h.gone && Math.hypot(h.player.x - e.x, h.player.y - e.y) < 48) hurtHero(h, e.damage);
+  }
 }

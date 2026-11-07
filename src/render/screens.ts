@@ -8,6 +8,7 @@ import { formatTime } from '../core/math';
 import { DEBUG, menuSelection, run, totalArmor } from '../core/state';
 import { CLASSES, CLASS_ORDER } from '../classes/registry';
 import { CARD_MAX_LEVEL, OFFER_SIZE, PART_LABEL, canReroll, cardDef, relicDef, rerollLabel, upgradeLabel } from '../progression/cards';
+import { net } from '../net/session';
 import { drawButton, drawDashedRect, drawDiamond, drawPanel, drawPixelText, drawText, drawWrappedText } from './primitives';
 
 const OVERLAY = 'rgba(10,7,14,0.78)';
@@ -29,9 +30,9 @@ export function rerollButtonRect(): Rect {
 
 export function drawLevelUp(): void {
   const offer = run.offer;
-  if (!offer) return;
   ctx.fillStyle = OVERLAY;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  if (!offer) { drawWaitingForTeam(); return; }
   drawPixelText('Level up! · Lv ' + (run.player.level - run.pendingLevelUps + 1), VIEW_W / 2, 84, 30, COLOR.gold, 'center');
   const rects = levelCardRects();
   offer.items.forEach((item, i) => drawOfferCard(item, rects[i], i, offer.hover === i));
@@ -40,6 +41,14 @@ export function drawLevelUp(): void {
   drawPanel(reroll.x, reroll.y, reroll.w, reroll.h, canUse && mouseIn(reroll) ? COLOR.panelHover : COLOR.panel, canUse ? COLOR.gold : COLOR.line, 2);
   drawPixelText(rerollLabel(), reroll.x + reroll.w / 2, reroll.y + 22, 14, canUse ? COLOR.gold : COLOR.dim, 'center');
   drawText('Click a card or press 1, 2, 3', VIEW_W / 2, 510, 13, COLOR.dim, 'center');
+}
+
+/** Co-op: you've chosen, the game resumes once everyone has. */
+function drawWaitingForTeam(): void {
+  const choosing = run.heroes.filter((h) => h.offer && !h.gone).map((h) => h.name);
+  drawPixelText('Card chosen', VIEW_W / 2, VIEW_H / 2 - 20, 28, COLOR.gold, 'center');
+  const who = choosing.length ? 'Waiting for ' + choosing.join(', ') + ' to choose…' : 'Resuming…';
+  drawText(who, VIEW_W / 2, VIEW_H / 2 + 14, 15, COLOR.muted, 'center');
 }
 
 function offerTag(item: OfferItem): string {
@@ -175,9 +184,114 @@ export function drawMenu(): void {
   drawPixelText('Choose a class', VIEW_W / 2, 136, 15, COLOR.gold, 'center');
   const rects = menuCardRects();
   CLASS_ORDER.forEach((id, i) => drawClassCard(CLASSES[id], rects[i], i, menuSelection === i));
+  const online = menuOnlineButtons();
+  drawButton(online.host, 'Create room · C', COLOR.teal, COLOR.teal, 21);
+  drawButton(online.join, 'Join room · J', COLOR.gold, COLOR.gold, 21);
+  drawText('Online co-op: up to ' + 4 + ' players', VIEW_W - 103, 98, 10, COLOR.dim, 'center');
+  if (net.notice) drawText(net.notice, VIEW_W / 2, 466, 13, COLOR.ember, 'center');
   drawText('WASD move · Left click Strike · Right click Heavy Strike · Space dash · Q Ultimate · Esc pause', VIEW_W / 2, 488, 13, COLOR.text, 'center');
-  const godHint = 'Keyboard and mouse needed. Press 1–4 or click a class to start. Press G for test mode (you can\'t die): ' + (DEBUG.god ? 'ON' : 'off');
+  const godHint = 'Keyboard and mouse needed. Press 1–4 or click a class to play solo. Press G for test mode (you can\'t die): ' + (DEBUG.god ? 'ON' : 'off');
   drawText(godHint, VIEW_W / 2, 510, 12, DEBUG.god ? COLOR.gold : COLOR.dim, 'center');
+}
+
+/** "Create room" / "Join room", top right of the class select screen. */
+export function menuOnlineButtons(): { host: Rect; join: Rect } {
+  return {
+    host: { x: VIEW_W - 190, y: 16, w: 174, h: 32 },
+    join: { x: VIEW_W - 190, y: 54, w: 174, h: 32 },
+  };
+}
+
+// ------------------------------------------------------------ online: lobby, join, leave panel
+
+export function lobbyButtons(): { start: Rect; copy: Rect; leave: Rect } {
+  return {
+    start: { x: VIEW_W / 2 + 120, y: 444, w: 200, h: 42 },
+    copy: { x: VIEW_W / 2 - 100, y: 444, w: 200, h: 42 },
+    leave: { x: VIEW_W / 2 - 320, y: 444, w: 200, h: 42 },
+  };
+}
+
+export function drawLobby(): void {
+  drawMenuBackdrop();
+  const host = net.mode === 'host';
+  drawPixelText('Room code', VIEW_W / 2, 56, 18, COLOR.muted, 'center');
+  drawPixelText(net.code || '·····', VIEW_W / 2, 112, 56, COLOR.gold, 'center');
+  drawText(host ? 'Send this code (or the invite link) to your friends. They choose Join room and type it in.' : 'You\'re in! Waiting for the host to start.', VIEW_W / 2, 140, 13, COLOR.muted, 'center');
+
+  const w = 200, gap = 14, x0 = VIEW_W / 2 - (4 * w + 3 * gap) / 2, y = 168, h = 220;
+  for (let i = 0; i < 4; i++) {
+    const x = x0 + i * (w + gap), player = net.players[i];
+    if (!player) {
+      drawDashedRect(x + 1, y + 1, w - 2, h - 2, [5, 5], COLOR.line, 2);
+      drawText('Open slot', x + w / 2, y + h / 2, 13, COLOR.dim, 'center');
+      continue;
+    }
+    const cls = CLASSES[player.classId], mine = i === (host ? 0 : net.you);
+    drawPanel(x, y, w, h, COLOR.panel, mine ? cls.color : COLOR.line, mine ? 3 : 2, cls.color);
+    drawPixelText(player.name + (mine ? ' (you)' : ''), x + w / 2, y + 34, 16, mine ? COLOR.gold : COLOR.text, 'center');
+    ctx.fillStyle = cls.color;
+    ctx.beginPath(); ctx.arc(x + w / 2, y + 92, 30, 0, TAU); ctx.fill();
+    drawPixelText(cls.name[0], x + w / 2, y + 101, 26, COLOR.ink, 'center');
+    drawPixelText(cls.name, x + w / 2, y + 150, 18, COLOR.text, 'center');
+    drawText(cls.role, x + w / 2, y + 170, 11, COLOR.muted, 'center');
+    if (mine) drawText('1–4 or ←/→ to change class', x + w / 2, y + 200, 10, COLOR.dim, 'center');
+  }
+
+  const b = lobbyButtons();
+  drawButton(b.leave, 'Leave · Esc', COLOR.ember, COLOR.ember, 27);
+  drawButton(b.copy, 'Copy invite link', COLOR.teal, COLOR.teal, 27);
+  if (host) drawButton(b.start, 'Start · Enter', COLOR.gold, COLOR.gold, 27);
+  else drawText('The host starts the game', b.start.x + b.start.w / 2, b.start.y + 26, 12, COLOR.dim, 'center');
+  if (net.status) drawText(net.status, VIEW_W / 2, 420, 13, COLOR.gold, 'center');
+  drawText('Co-op: XP is shared, everyone picks their own cards. Stand next to a downed friend to revive them.', VIEW_W / 2, 512, 12, COLOR.dim, 'center');
+}
+
+export function joinButtons(): { join: Rect; back: Rect } {
+  return {
+    back: { x: VIEW_W / 2 - 220, y: 360, w: 200, h: 42 },
+    join: { x: VIEW_W / 2 + 20, y: 360, w: 200, h: 42 },
+  };
+}
+
+export function drawJoin(): void {
+  drawMenuBackdrop();
+  drawPixelText('Join a room', VIEW_W / 2, 110, 34, COLOR.text, 'center');
+  const connecting = net.mode === 'client';
+  drawText(connecting ? '' : 'Type the 5-letter code from your friend, or paste their invite link.', VIEW_W / 2, 146, 14, COLOR.muted, 'center');
+  const code = connecting ? net.code : net.joinText;
+  const boxW = 64, gap = 12, x0 = VIEW_W / 2 - (5 * boxW + 4 * gap) / 2;
+  for (let i = 0; i < 5; i++) {
+    const x = x0 + i * (boxW + gap), active = !connecting && i === code.length;
+    drawPanel(x, 190, boxW, 80, COLOR.panel, active ? COLOR.gold : COLOR.line, active ? 3 : 2);
+    if (code[i]) drawPixelText(code[i], x + boxW / 2, 248, 40, COLOR.gold, 'center');
+  }
+  if (net.status) drawText(net.status, VIEW_W / 2, 314, 14, connecting ? COLOR.teal : COLOR.ember, 'center');
+  const b = joinButtons();
+  drawButton(b.back, 'Back · Esc', COLOR.frame, COLOR.text, 27);
+  const ready = !connecting && net.joinText.length === 5;
+  drawButton(b.join, connecting ? 'Connecting…' : 'Join · Enter', ready ? COLOR.gold : COLOR.line, ready ? COLOR.gold : COLOR.dim, 27);
+  drawText('You\'ll play as ' + CLASSES[CLASS_ORDER[menuSelection]].name + '. You can change class in the room.', VIEW_W / 2, 440, 12, COLOR.dim, 'center');
+}
+
+/** Esc during an online game: the game keeps running, so this is just a leave prompt. */
+export function drawOnlineMenu(): void {
+  ctx.fillStyle = 'rgba(10,7,14,0.6)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  drawPanel(VIEW_W / 2 - 200, VIEW_H / 2 - 70, 400, 140, COLOR.panel, COLOR.frame, 2, COLOR.gold);
+  drawPixelText('Online game', VIEW_W / 2, VIEW_H / 2 - 30, 22, COLOR.text, 'center');
+  drawText('The game keeps running for everyone.', VIEW_W / 2, VIEW_H / 2 - 4, 13, COLOR.muted, 'center');
+  drawText('Esc back to the game · L leave the game', VIEW_W / 2, VIEW_H / 2 + 34, 14, COLOR.gold, 'center');
+}
+
+function drawMenuBackdrop(): void {
+  ctx.fillStyle = COLOR.bg;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  for (let i = 0; i < 60; i++) {
+    const x = (i * 157) % VIEW_W, y = (i * 89) % VIEW_H;
+    ctx.fillStyle = i % 3 ? '#1f1828' : '#2a2036';
+    ctx.fillRect(x, y, 3, 3);
+  }
 }
 
 function drawClassCard(cls: ClassDef, rect: Rect, index: number, selected: boolean): void {
@@ -296,6 +410,11 @@ export function drawResult(): void {
   });
   drawText('Rewards (shop and skill tree come later): +' + result.gold + ' gold · +' + result.exp + ' Specialist EXP', VIEW_W / 2, 390, 13, COLOR.gold, 'center');
   const b = resultButtons();
+  if (net.mode === 'client') {
+    drawText('Waiting for the host…', b.again.x + b.again.w / 2, b.again.y + 27, 13, COLOR.dim, 'center');
+    drawButton(b.menu, 'Leave · Esc', COLOR.frame, COLOR.text, 28);
+    return;
+  }
   drawButton(b.again, 'Play again · Enter', COLOR.teal, COLOR.teal, 28);
-  drawButton(b.menu, 'Change class · Esc', COLOR.frame, COLOR.text, 28);
+  drawButton(b.menu, net.mode === 'host' ? 'Back to room · Esc' : 'Change class · Esc', COLOR.frame, COLOR.text, 28);
 }

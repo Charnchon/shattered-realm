@@ -1,7 +1,7 @@
 // ============================================================ global game state
-import type { Point, RelicId, Run, SceneId, Stats, UpgradeType } from '../types';
-import { SCENE } from './constants';
-import { mouse } from './input';
+import type { Hero, Point, RelicId, Run, SceneId, Stats, UpgradeType } from '../types';
+import { ARENA_H, ARENA_W, SCENE, VIEW_H, VIEW_W } from './constants';
+import { clamp } from './math';
 
 /**
  * State of the current run. Built by `newRun`, so only read it from gameplay
@@ -12,7 +12,7 @@ export let run: Run = null as unknown as Run;
 export let scene: SceneId = SCENE.MENU;
 /** Highlighted class on the menu. */
 export let menuSelection = 0;
-/** Test switches: `god` = can't die, `bot` = the game plays itself. */
+/** Test switches: `god` = can't die, `bot` = the local player is played by the bot. */
 export const DEBUG = { god: false, bot: false };
 
 // ES modules can't assign another module's variables, so changes go through these.
@@ -21,9 +21,62 @@ export const setScene = (next: SceneId): void => { scene = next; };
 export const setMenuSelection = (next: number): void => { menuSelection = next; };
 export const hasRun = (): boolean => run !== null;
 
-/** Mouse position in world coordinates. */
+/** Where the current hero is aiming, in world coordinates (their mouse, for a human player). */
 export function mouseWorld(): Point {
-  return { x: mouse.x + run.camera.x, y: mouse.y + run.camera.y };
+  const input = run.hero.input;
+  return { x: input.aimX, y: input.aimY };
+}
+
+// ------------------------------------------------------------ heroes (players)
+
+/**
+ * Run `fn` as `hero`: while it runs, `run.player`, `run.stats`, `run.cls`, `run.cards`, ... are that hero's.
+ * Class hooks, damage credit and healing all follow the current hero. Restores the previous hero afterwards.
+ */
+export function withHero<T>(hero: Hero, fn: () => T): T {
+  const previous = run.hero;
+  run.hero = hero;
+  try {
+    return fn();
+  } finally {
+    run.hero = previous;
+  }
+}
+
+/** Run `fn` as the hero at `idx` (falls back to the current hero if it doesn't exist). */
+export function asHero<T>(idx: number | undefined, fn: () => T): T {
+  const hero = idx === undefined ? undefined : run.heroes[idx];
+  return hero ? withHero(hero, fn) : fn();
+}
+
+/** Heroes still fighting (not knocked out, not disconnected). */
+export const livingHeroes = (): Hero[] => run.heroes.filter((h) => !h.down && !h.gone);
+
+/** The living hero closest to (x, y), or null when everyone is down. */
+export function nearestHero(x: number, y: number): Hero | null {
+  let best: Hero | null = null, bestSq = Infinity;
+  for (const h of run.heroes) {
+    if (h.down || h.gone) continue;
+    const dSq = (h.player.x - x) ** 2 + (h.player.y - y) ** 2;
+    if (dSq < bestSq) { bestSq = dSq; best = h; }
+  }
+  return best;
+}
+
+/** The hero this screen belongs to. */
+export const localHero = (): Hero => run.heroes[run.localHero];
+
+/** Point the camera at this screen's hero. */
+export function updateCamera(): void {
+  const p = localHero().player;
+  run.camera.x = clamp(p.x - VIEW_W / 2, -40, ARENA_W - VIEW_W + 40);
+  run.camera.y = clamp(p.y - VIEW_H / 2, -40, ARENA_H - VIEW_H + 40);
+}
+
+/** Co-op difficulty: 1 for one player, plus `perExtraPlayer` for each additional one. */
+export function partyScale(perExtraPlayer: number): number {
+  const players = run.heroes.filter((h) => !h.gone).length;
+  return 1 + perExtraPlayer * Math.max(0, players - 1);
 }
 
 /** Show a large centred message for `duration` seconds. */

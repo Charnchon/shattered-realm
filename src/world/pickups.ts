@@ -1,6 +1,7 @@
 // ============================================================ pickups: XP gems, coins, heal orbs
-import type { Coin, Point } from '../types';
-import { run } from '../core/state';
+// In co-op, XP is shared (everyone levels together); coins and heal orbs go to whoever collects them.
+import type { Coin, Hero, Point } from '../types';
+import { nearestHero, run, withHero } from '../core/state';
 import { healPlayer } from './combat';
 
 const GEM_SPEED = 520;
@@ -12,9 +13,14 @@ const GEM_KEEP = 200;
 
 interface Magnetic extends Point {
   magnetized?: boolean;
+  to?: number;
   dead?: boolean;
 }
-type Puller = Point & { pickupRadius?: number };
+/** Something that pulls pickups in for a hero: the hero, or a class helper such as a pet. */
+interface Puller extends Point {
+  radius: number;
+  hero: Hero;
+}
 
 export function dropGem(x: number, y: number, value: number, big: boolean): void {
   run.gems.push({ x, y, value, magnetized: false, big });
@@ -26,40 +32,59 @@ export function dropCoin(x: number, y: number, value: number, kind: Coin['kind']
 }
 
 export function updatePickups(dt: number): void {
-  if (run.magnetAllTime > 0) run.magnetAllTime -= dt;
-  const pullers: Puller[] = [run.player];
-  if (run.cls.pickupHelpers) pullers.push(...run.cls.pickupHelpers());
+  const pullers: Puller[] = [];
+  for (const h of run.heroes) {
+    if (h.magnetAllTime > 0) h.magnetAllTime -= dt;
+    if (h.down || h.gone) continue;
+    pullers.push({ x: h.player.x, y: h.player.y, radius: h.stats.pickupRadius, hero: h });
+    if (h.cls.pickupHelpers) {
+      for (const helper of withHero(h, () => h.cls.pickupHelpers!())) pullers.push({ x: helper.x, y: helper.y, radius: helper.pickupRadius, hero: h });
+    }
+  }
+  if (!pullers.length) return;
+  const magnetAll = run.heroes.find((h) => h.magnetAllTime > 0 && !h.down && !h.gone);
 
-  for (const gem of run.gems) updateMagnetPickup(gem, pullers, GEM_SPEED, dt, () => gainXp(gem.value));
+  for (const gem of run.gems) updateMagnetPickup(gem, pullers, magnetAll, GEM_SPEED, dt, () => shareXp(gem.value));
   run.gems = run.gems.filter((g) => !g.dead);
   mergeExcessGems();
 
-  for (const coin of run.coins) updateMagnetPickup(coin, pullers, COIN_SPEED, dt, () => collectCoin(coin));
+  for (const coin of run.coins) updateMagnetPickup(coin, pullers, magnetAll, COIN_SPEED, dt, (h) => withHero(h, () => collectCoin(coin)));
   run.coins = run.coins.filter((c) => !c.dead);
 }
 
-/** Start flying to the player once any puller is close (or magnet-all is on). */
-function updateMagnetPickup(item: Magnetic, pullers: Puller[], speed: number, dt: number, onCollect: () => void): void {
-  const p = run.player;
+/** Start flying to a hero once any of their pullers is close (or their magnet-all is on). */
+function updateMagnetPickup(item: Magnetic, pullers: Puller[], magnetAll: Hero | undefined, speed: number, dt: number, onCollect: (h: Hero) => void): void {
   if (!item.magnetized) {
-    if (run.magnetAllTime > 0) item.magnetized = true;
+    if (magnetAll) { item.magnetized = true; item.to = magnetAll.idx; }
     else {
       for (const puller of pullers) {
-        const r = puller === p ? run.stats.pickupRadius : (puller.pickupRadius ?? 0);
-        if ((puller.x - item.x) ** 2 + (puller.y - item.y) ** 2 < r * r) { item.magnetized = true; break; }
+        if ((puller.x - item.x) ** 2 + (puller.y - item.y) ** 2 < puller.radius * puller.radius) {
+          item.magnetized = true;
+          item.to = puller.hero.idx;
+          break;
+        }
       }
     }
   }
   if (!item.magnetized) return;
+  // fly to the hero who pulled it in; if they went down, to whoever is nearest
+  let hero = item.to === undefined ? undefined : run.heroes[item.to];
+  if (!hero || hero.down || hero.gone) {
+    hero = nearestHero(item.x, item.y) ?? undefined;
+    if (!hero) return;
+    item.to = hero.idx;
+  }
+  const p = hero.player;
   const a = Math.atan2(p.y - item.y, p.x - item.x);
   item.x += Math.cos(a) * speed * dt;
   item.y += Math.sin(a) * speed * dt;
   if ((p.x - item.x) ** 2 + (p.y - item.y) ** 2 < COLLECT_RADIUS * COLLECT_RADIUS) {
     item.dead = true;
-    onCollect();
+    onCollect(hero);
   }
 }
 
+/** Runs as the hero who collected it. */
 function collectCoin(coin: Coin): void {
   if (coin.kind === 'heal') { healPlayer(coin.value); return; }
   run.coinsHeld += coin.value;
@@ -80,12 +105,17 @@ export function xpToNextLevel(level: number): number {
   return 8 + 5 * level + 0.5 * level * level;
 }
 
-function gainXp(amount: number): void {
-  const p = run.player;
+/** Every hero in the run gets the XP. */
+function shareXp(amount: number): void {
+  for (const h of run.heroes) if (!h.gone) gainXp(h, amount);
+}
+
+function gainXp(hero: Hero, amount: number): void {
+  const p = hero.player;
   p.xp += amount;
   while (p.xp >= xpToNextLevel(p.level)) {
     p.xp -= xpToNextLevel(p.level);
     p.level++;
-    run.pendingLevelUps++;
+    hero.pendingLevelUps++;
   }
 }

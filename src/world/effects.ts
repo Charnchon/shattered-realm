@@ -2,7 +2,7 @@
 import type { Telegraph, TelegraphSpec } from '../types';
 import { TAU } from '../core/constants';
 import { randRange } from '../core/math';
-import { run } from '../core/state';
+import { asHero, run } from '../core/state';
 
 const MAX_FX = 500;
 const MAX_FLOATING_TEXTS = 120;
@@ -51,12 +51,22 @@ export function addTelegraph(spec: TelegraphSpec): Telegraph {
   return telegraph;
 }
 
-/** Run `fn` after `delay` seconds of game time (pauses with the game). */
+/** Run `fn` after `delay` seconds of game time (pauses with the game), as the current hero. */
 export function schedule(delay: number, fn: () => void): void {
-  run.timers.push({ t: delay, fn });
+  run.timers.push({ t: delay, fn, hero: run.hero.idx });
 }
 
 export function updateEffects(dt: number): void {
+  ageVisualEffects(dt);
+  for (const timer of run.timers) {
+    timer.t -= dt;
+    if (timer.t <= 0 && !timer.done) { timer.done = true; asHero(timer.hero, timer.fn); }
+  }
+  run.timers = run.timers.filter((timer) => !timer.done);
+}
+
+/** Particles, floating texts and telegraphs. Also run by online clients between snapshots. */
+export function ageVisualEffects(dt: number): void {
   for (const f of run.fx) {
     f.life -= dt;
     if (!f.kind) { f.x += f.vx * dt; f.y += f.vy * dt; f.vx *= 0.9; f.vy *= 0.9; }
@@ -69,10 +79,4 @@ export function updateEffects(dt: number): void {
 
   for (const t of run.telegraphs) t.t += dt;
   run.telegraphs = run.telegraphs.filter((t) => t.t < t.dur);
-
-  for (const timer of run.timers) {
-    timer.t -= dt;
-    if (timer.t <= 0 && !timer.done) { timer.done = true; timer.fn(); }
-  }
-  run.timers = run.timers.filter((timer) => !timer.done);
 }

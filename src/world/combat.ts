@@ -1,8 +1,8 @@
 // ============================================================ combat: damage, healing, status
-import type { Enemy, HitOptions } from '../types';
+import type { Enemy, Hero, HitOptions } from '../types';
 import { COLOR, SCENE } from '../core/constants';
 import { angleDiff, randRange, segmentDistSq } from '../core/math';
-import { DEBUG, run, scene, showBanner, totalArmor } from '../core/state';
+import { DEBUG, livingHeroes, run, scene, showBanner, totalArmor, withHero } from '../core/state';
 import { endRun } from '../game/run';
 import { onBossDefeated } from './bosses';
 import { addFloatingText, spawnBurst } from './effects';
@@ -93,6 +93,7 @@ export function killEnemy(e: Enemy, opts: HitOptions = {}): void {
 export function applyBleed(e: Enemy, dps: number, duration: number): void {
   e.bleedDps = Math.max(e.bleedTime > 0 ? e.bleedDps : 0, dps);
   e.bleedTime = Math.max(e.bleedTime, duration);
+  e.bleedOwner = run.hero.idx;
 }
 
 // ------------------------------------------------------------ area attacks (return enemies hit)
@@ -135,10 +136,15 @@ export function addUlt(amount: number): void {
   run.player.ult = Math.min(100, run.player.ult + amount);
 }
 
-/** Hit the player (contact, projectile, slam). Respects i-frames, armor and shields. */
+/** Hit a specific hero (see `hurtPlayer`). */
+export const hurtHero = (hero: Hero, amount: number): void => withHero(hero, () => hurtPlayer(amount));
+/** Damage over time to a specific hero (see `hurtPlayerOverTime`). */
+export const hurtHeroOverTime = (hero: Hero, amount: number): void => withHero(hero, () => hurtPlayerOverTime(amount));
+
+/** Hit the current hero (contact, projectile, slam). Respects i-frames, armor and shields. */
 export function hurtPlayer(amount: number): void {
   const p = run.player;
-  if (p.iframes > 0 || p.dashTime > 0 || DEBUG.god || scene !== SCENE.PLAY) return;
+  if (run.hero.down || p.iframes > 0 || p.dashTime > 0 || DEBUG.god || scene !== SCENE.PLAY) return;
   const armor = totalArmor();
   let damage = amount * (1 - armor / (armor + ARMOR_HALF_POINT));
   if (p.boneShield > 0) {
@@ -161,7 +167,7 @@ export function hurtPlayer(amount: number): void {
 /** Damage over time (fire, the closing arena). Ignores armor and i-frames. */
 export function hurtPlayerOverTime(amount: number): void {
   const p = run.player;
-  if (DEBUG.god || p.dashTime > 0) return;
+  if (run.hero.down || DEBUG.god || p.dashTime > 0) return;
   let damage = amount;
   if (run.cls.absorb) damage = run.cls.absorb(damage);
   p.hp -= damage;
@@ -169,16 +175,34 @@ export function hurtPlayerOverTime(amount: number): void {
   checkPlayerDeath();
 }
 
+/** At 0 HP the hero is knocked out. The run ends when every hero is down. */
 function checkPlayerDeath(): void {
   const p = run.player;
   if (p.hp > 0) return;
   if (run.cls.onLethal && run.cls.onLethal()) return;
   p.hp = 0;
-  endRun(false);
+  run.hero.down = true;
+  run.hero.revive = 0;
+  p.dashTime = 0;
+  if (livingHeroes().length === 0) { endRun(false); return; }
+  spawnBurst(p.x, p.y, run.cls.color, 16, 120);
+  showBanner(run.hero.name + ' is down!', 2);
+}
+
+/** Bring a downed hero back with a share of their max HP. */
+export function reviveHero(hero: Hero, hpFrac: number): void {
+  if (!hero.down || hero.gone) return;
+  hero.down = false;
+  hero.revive = 0;
+  const p = hero.player;
+  p.hp = Math.max(1, hero.stats.maxHp * hpFrac);
+  p.iframes = 2;
+  spawnBurst(p.x, p.y, COLOR.green, 18, 120);
+  addFloatingText(p.x, p.y - 26, 'revived', COLOR.green, 13);
 }
 
 export function healPlayer(amount: number, silent?: boolean): void {
-  if (amount <= 0 || !run) return;
+  if (amount <= 0 || !run || run.hero.down) return;
   if (run.cls.onHeal) { run.cls.onHeal(amount, silent); return; }
   const p = run.player, before = p.hp;
   p.hp = Math.min(run.stats.maxHp, p.hp + amount);

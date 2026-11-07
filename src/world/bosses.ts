@@ -1,9 +1,9 @@
 // ============================================================ bosses
-import type { Boss, BossKind } from '../types';
+import type { Boss, BossKind, Hero } from '../types';
 import { ARENA_H, ARENA_W, COLOR, TAU } from '../core/constants';
-import { angleDiff, clamp, randRange } from '../core/math';
-import { run, showBanner } from '../core/state';
-import { hurtPlayer } from './combat';
+import { angleDiff, clamp, randPick, randRange } from '../core/math';
+import { livingHeroes, nearestHero, partyScale, run, showBanner, withHero } from '../core/state';
+import { hurtHero, hurtPlayer } from './combat';
 import { addFloatingText, addTelegraph, schedule, spawnBurst, spawnSlash } from './effects';
 import { createStatusTimers, spawnEnemy } from './enemies';
 import { dropGem } from './pickups';
@@ -35,13 +35,21 @@ export const BOSS_DEFS: Record<number, BossDef> = {
 
 const BOSS_TELEGRAPH_COLOR = COLOR.ember;
 
+/** Hurt every living hero for whom `inRange(hero)` is true. */
+function hurtHeroesWhere(inRange: (h: Hero) => boolean, amount: number): void {
+  for (const h of livingHeroes()) if (inRange(h)) hurtHero(h, amount);
+}
+
 export function spawnBoss(wave: number): void {
-  const def = BOSS_DEFS[wave], a = randRange(0, TAU), p = run.player;
+  const living = livingHeroes();
+  const def = BOSS_DEFS[wave], a = randRange(0, TAU), p = living.length ? randPick(living).player : run.player;
   const x = clamp(p.x + Math.cos(a) * 380, 80, ARENA_W - 80);
   const y = clamp(p.y + Math.sin(a) * 380, 80, ARENA_H - 80);
+  const hp = def.hp * partyScale(0.7);
   const e: Boss = {
+    id: run.nextId++,
     type: 'boss', kind: def.kind, name: def.name, x, y, r: def.r,
-    hp: def.hp, maxHp: def.hp, speed: def.speed, damage: def.damage, color: def.color, undead: def.undead,
+    hp, maxHp: hp, speed: def.speed, damage: def.damage, color: def.color, undead: def.undead,
     unlocksCardSlot: !!def.unlocksCardSlot,
     boss: true, elite: false, dead: false, flash: 0, contactCooldown: 0, xp: 0, face: 0, knockX: 0, knockY: 0,
     ...createStatusTimers(),
@@ -67,7 +75,7 @@ export function onBossDefeated(e: Boss): void {
   spawnBurst(e.x, e.y, e.color, 40, 240);
   run.shake = 10;
   if (e.unlocksCardSlot) {
-    run.cardSlots++;
+    for (const h of run.heroes) h.cardSlots++;
     schedule(2.4, () => showBanner(ordinal(run.cardSlots) + ' card slot unlocked', 2.5));
   }
   completeWave();
@@ -75,7 +83,14 @@ export function onBossDefeated(e: Boss): void {
 
 const ordinal = (n: number): string => n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
 
+/** The boss hunts the nearest hero. Its AI runs as that hero, so `run.player` is its target. */
 export function updateBoss(e: Boss, dt: number): void {
+  const target = nearestHero(e.x, e.y);
+  if (!target) return;
+  withHero(target, () => updateBossFor(e, dt));
+}
+
+function updateBossFor(e: Boss, dt: number): void {
   const p = run.player;
   if (e.stunTime > 0) { e.stunTime -= dt; return; }
   const angle = Math.atan2(p.y - e.y, p.x - e.x), distToPlayer = Math.hypot(p.x - e.x, p.y - e.y);
@@ -139,8 +154,7 @@ const BOSS_AI: Record<BossKind, BossAi> = {
       if (e.stateTime >= 0.8) setBossState(e, 'charge');
     } else if (e.state === 'charge') {
       moveBossToward(e, e.lockedAngle, 580, dt);
-      const p = run.player;
-      if (Math.hypot(p.x - e.x, p.y - e.y) < e.r + p.r) hurtPlayer(e.damage * 1.4);
+      hurtHeroesWhere((h) => Math.hypot(h.player.x - e.x, h.player.y - e.y) < e.r + h.player.r, e.damage * 1.4);
       const hitWall = e.x <= e.r + 1 || e.x >= ARENA_W - e.r - 1 || e.y <= e.r + 1 || e.y >= ARENA_H - e.r - 1;
       if (e.stateTime > 0.93 || hitWall) {
         setBossState(e, 'recover');
@@ -153,7 +167,7 @@ const BOSS_AI: Record<BossKind, BossAi> = {
   },
 
   // Bone Colossus: ground slam shockwaves, summons skeleton archers.
-  colossus(e, dt, angle, distToPlayer, slowMul) {
+  colossus(e, dt, angle, _distToPlayer, slowMul) {
     if (e.state === 'chase') {
       chasePlayer(e, angle, dt, slowMul);
       e.attackTimer -= dt;
@@ -172,7 +186,7 @@ const BOSS_AI: Record<BossKind, BossAi> = {
       }
     } else if (e.state === 'slam') {
       if (e.stateTime >= 1.0) {
-        if (distToPlayer < 170) hurtPlayer(e.damage);
+        hurtHeroesWhere((h) => Math.hypot(h.player.x - e.x, h.player.y - e.y) < 170, e.damage);
         addZone({ owner: 'enemy', kind: 'ring', x: e.x, y: e.y, r: 0, startR: 30, endR: 330, currentR: 30, dur: 0.9, life: 1, dmg: e.damage * 0.8 });
         run.shake = 8;
         spawnBurst(e.x, e.y, '#d8d0b8', 16, 160);
@@ -216,7 +230,7 @@ const BOSS_AI: Record<BossKind, BossAi> = {
       if (e.stateTime >= 0.9) {
         const remaining = moveBossTo(e, e.target.x, e.target.y, 950, dt);
         if (remaining < 6 || e.stateTime > 2.2) {
-          if (Math.hypot(p.x - e.x, p.y - e.y) < 64 + p.r) hurtPlayer(e.damage * 1.2);
+          hurtHeroesWhere((h) => Math.hypot(h.player.x - e.x, h.player.y - e.y) < 64 + h.player.r, e.damage * 1.2);
           run.shake = 7;
           spawnBurst(e.x, e.y, '#ff6e32', 18, 180);
           setBossState(e, 'land');
@@ -258,8 +272,11 @@ const BOSS_AI: Record<BossKind, BossAi> = {
       }
     } else if (e.state === 'slash') {
       if (e.stateTime >= 0.9) {
-        const inCone = Math.abs(angleDiff(e.lockedAngle, Math.atan2(p.y - e.y, p.x - e.x))) < Math.PI / 4 + 0.1;
-        if (distToPlayer < 170 + p.r && inCone) hurtPlayer(22);
+        hurtHeroesWhere((h) => {
+          const hp = h.player;
+          const inCone = Math.abs(angleDiff(e.lockedAngle, Math.atan2(hp.y - e.y, hp.x - e.x))) < Math.PI / 4 + 0.1;
+          return inCone && Math.hypot(hp.x - e.x, hp.y - e.y) < 170 + hp.r;
+        }, 22);
         spawnSlash(e.x, e.y, e.lockedAngle, 170, Math.PI / 2, COLOR.ember, 8);
         e.state = 'chase';
         e.attackTimer = randRange(2.6, 3.4);

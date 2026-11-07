@@ -3,7 +3,7 @@ import type { Boss, BossKind, Enemy, EnemyTypeId, Mob } from '../types';
 import { ctx } from '../core/canvas';
 import { ARENA_H, ARENA_W, COLOR, TAU, VIEW_H, VIEW_W } from '../core/constants';
 import { randRange } from '../core/math';
-import { run } from '../core/state';
+import { run, withHero } from '../core/state';
 import { diamondPath, drawBar, drawPixelText } from './primitives';
 
 const GROUND_TILE = 64;
@@ -32,8 +32,13 @@ export function drawWorld(): void {
   drawTelegraphs();
   drawPickups();
   for (const e of run.enemies) drawEnemy(e);
-  run.cls.draw();
-  drawPlayer();
+  for (const h of run.heroes) {
+    if (h.gone) continue;
+    withHero(h, () => {
+      if (!h.down) run.cls.draw();
+      drawPlayer();
+    });
+  }
   drawShots();
   drawEffects();
   drawFloatingTexts();
@@ -213,7 +218,32 @@ function drawFloatingTexts(): void {
 
 // ------------------------------------------------------------ player
 
+/** The current hero: a downed body with its revive ring, or the living hero. Name tags in co-op. */
 function drawPlayer(): void {
+  const p = run.player, hero = run.hero, coop = run.heroes.length > 1;
+  if (hero.down) { drawDownedHero(); return; }
+  drawLivingHero();
+  if (coop) drawPixelText(hero.name, p.x, p.y - p.r - 10, 10, hero.idx === run.localHero ? COLOR.gold : COLOR.text, 'center');
+}
+
+function drawDownedHero(): void {
+  const p = run.player, hero = run.hero;
+  drawShadow(p.x, p.y + 8, 12, 4, 0.35);
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = run.cls.color;
+  ctx.beginPath(); ctx.ellipse(p.x, p.y + 3, p.r + 2, p.r * 0.55, 0, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = COLOR.line;
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, TAU); ctx.stroke();
+  if (hero.revive > 0) {
+    ctx.strokeStyle = COLOR.green;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 22, -Math.PI / 2, -Math.PI / 2 + TAU * hero.revive); ctx.stroke();
+  }
+  drawPixelText(hero.name + ' · down', p.x, p.y - 30, 10, COLOR.red, 'center');
+}
+
+function drawLivingHero(): void {
   const p = run.player;
   const blinking = p.iframes > 0 && p.dashTime <= 0 && Math.floor(run.time * 20) % 2 === 1;
   if (blinking) ctx.globalAlpha = 0.5;

@@ -12,7 +12,7 @@ export interface Rect {
   h: number;
 }
 
-export type SceneId = 'menu' | 'play' | 'pause' | 'levelup' | 'result';
+export type SceneId = 'menu' | 'play' | 'pause' | 'levelup' | 'result' | 'lobby' | 'join';
 export type RarityId = 'common' | 'rare' | 'epic' | 'legendary';
 
 // ------------------------------------------------------------ player and stats
@@ -80,6 +80,10 @@ export interface StatusTimers {
 }
 
 interface EnemyBase extends Point, StatusTimers {
+  /** Unique per run; lets online clients match enemies between snapshots. */
+  id: number;
+  /** Hero whose bleed is ticking on this enemy (gets the credit). */
+  bleedOwner?: number;
   r: number;
   hp: number;
   maxHp: number;
@@ -176,6 +180,8 @@ export interface EnemyShot extends ShotBase {
 
 export interface PlayerShot extends ShotBase {
   owner: 'player';
+  /** Index of the hero who fired it (set by `fireShot`). */
+  hero: number;
   /** Enemies already hit (each is hit at most once). */
   hitSet: Set<Enemy>;
   /** Extra enemies it passes through. */
@@ -194,7 +200,7 @@ export interface PlayerShot extends ShotBase {
 export type Shot = PlayerShot | EnemyShot;
 
 /** What callers pass to `fireShot`; the rest is filled in. */
-export type PlayerShotSpec = Omit<PlayerShot, 'owner' | 'hitSet' | 'pierce' | 'life'> & { pierce?: number; life?: number };
+export type PlayerShotSpec = Omit<PlayerShot, 'owner' | 'hero' | 'hitSet' | 'pierce' | 'life'> & { pierce?: number; life?: number };
 
 interface ZoneBase extends Point {
   r: number;
@@ -227,7 +233,8 @@ export interface RingZone extends ZoneBase {
   startR: number;
   endR: number;
   currentR: number;
-  hitPlayer?: boolean;
+  /** Heroes already hit by this ring. */
+  hitHeroes?: number[];
 }
 
 /** Roots and damages the first enemy that steps on it. */
@@ -249,6 +256,8 @@ export type ZoneSpec = AreaZone | RingZone | TrapZone | MineZone;
 /** Fields `addZone` fills in. */
 export interface ZoneRuntime {
   owner: 'player' | 'enemy';
+  /** Hero who placed a player zone. */
+  hero: number;
   tick: number;
   /** Age in seconds. */
   t: number;
@@ -304,6 +313,8 @@ export type Telegraph = TelegraphSpec & { t: number };
 export interface Timer {
   t: number;
   fn: () => void;
+  /** Hero whose context the callback runs in. */
+  hero: number;
   done?: boolean;
 }
 
@@ -311,6 +322,8 @@ export interface Gem extends Point {
   value: number;
   big: boolean;
   magnetized: boolean;
+  /** Hero the gem is flying to, once magnetized. */
+  to?: number;
   dead?: boolean;
 }
 
@@ -318,6 +331,7 @@ export interface Coin extends Point {
   value: number;
   kind: 'coin' | 'heal';
   magnetized?: boolean;
+  to?: number;
   dead?: boolean;
 }
 
@@ -487,8 +501,64 @@ export interface RunResult {
   time: number;
 }
 
+/** One frame of a hero's controls, in world space. Filled from the keyboard, the network or the bot. */
+export interface HeroInput {
+  moveX: number;
+  moveY: number;
+  aimX: number;
+  aimY: number;
+  fire: boolean;
+  heavy: boolean;
+  /** One-shot presses: latched until the next simulation step uses them. */
+  dash: boolean;
+  ult: boolean;
+}
+
+/**
+ * One player in the run: their body, build and class state. Single player has one hero; co-op has 2-4.
+ * Gameplay code reads the *current* hero through `run.player`, `run.stats`, `run.cls`, ... (see `withHero`).
+ */
+export interface Hero {
+  /** Position in `run.heroes`; 0 is the host. */
+  idx: number;
+  name: string;
+  classId: string;
+  cls: ClassDef;
+  player: Player;
+  stats: Stats;
+  cardSlots: number;
+  cards: Record<string, CardState>;
+  relics: Partial<Record<RelicId, number>>;
+  statCards: Record<StatCardId, number>;
+  pendingLevelUps: number;
+  offer: Offer | null;
+  rerolls: number;
+  firstOffer: boolean;
+  coinsHeld: number;
+  magnetAllTime: number;
+  allies: Ally[];
+  classState: unknown;
+  input: HeroInput;
+  /** Played by the test bot. */
+  bot: boolean;
+  /** Knocked out: a teammate can revive them, or they return at the next wave. */
+  down: boolean;
+  /** 0-1 while a teammate stands next to a downed hero. */
+  revive: number;
+  /** Left the game (online). Never comes back this run. */
+  gone: boolean;
+}
+
 /** Everything about the current run. */
 export interface Run {
+  /** Every player in the run. */
+  heroes: Hero[];
+  /** The hero gameplay code is acting for right now (see `withHero`). Otherwise the local player. */
+  hero: Hero;
+  /** The hero this screen belongs to (camera, HUD, level-up screen). */
+  localHero: number;
+  /** Next enemy id. */
+  nextId: number;
   classId: string;
   cls: ClassDef;
   time: number;

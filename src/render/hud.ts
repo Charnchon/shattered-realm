@@ -17,6 +17,8 @@ const VITALS_W = 210;
 export function drawHUD(): void {
   drawPortrait();
   drawVitals();
+  drawTeammates();
+  drawDownedNotice();
   drawWaveInfo();
   drawBossBar();
   drawPauseHint();
@@ -57,6 +59,27 @@ function drawVitals(): void {
   drawBar(x, 38, VITALS_W, 6, p.xp / xpToNextLevel(p.level), COLOR.gold, COLOR.barBg);
   drawPixelText('Lv ' + p.level, x, 60, 14, COLOR.gold);
   drawText(run.kills + ' kills', x + VITALS_W, 60, 12, COLOR.muted, 'right');
+}
+
+/** Co-op: each teammate's name, class colour and HP, under your own bars. */
+function drawTeammates(): void {
+  if (run.heroes.length < 2) return;
+  let y = 84;
+  for (const h of run.heroes) {
+    if (h.idx === run.localHero) continue;
+    ctx.fillStyle = h.gone ? COLOR.line : h.cls.color;
+    ctx.beginPath(); ctx.arc(20, y - 4, 6, 0, TAU); ctx.fill();
+    const label = h.gone ? h.name + ' · left' : h.down ? h.name + ' · DOWN' : h.name;
+    drawText(label, 32, y, 11, h.gone ? COLOR.dim : h.down ? COLOR.red : COLOR.text);
+    if (!h.gone) drawBar(32, y + 4, 120, 5, h.down ? h.revive : h.player.hp / h.stats.maxHp, h.down ? COLOR.green : COLOR.ember, COLOR.barBg);
+    y += 24;
+  }
+}
+
+function drawDownedNotice(): void {
+  if (!run.hero.down) return;
+  drawPixelText('You are down', VIEW_W / 2, VIEW_H / 2 - 60, 22, COLOR.red, 'center');
+  drawText('A teammate can revive you by standing next to you, or you return at the next wave.', VIEW_W / 2, VIEW_H / 2 - 36, 12, COLOR.muted, 'center');
 }
 
 function drawWaveInfo(): void {

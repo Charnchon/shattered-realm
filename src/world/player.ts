@@ -1,25 +1,15 @@
-// ============================================================ player
+// ============================================================ player (the current hero, see withHero)
 import { ARENA_H, ARENA_W } from '../core/constants';
-import { keysDown, keysPressed, mouse } from '../core/input';
 import { clamp } from '../core/math';
-import { DEBUG, mouseWorld, run, showBanner } from '../core/state';
-import { bot } from '../game/bot';
+import { mouseWorld, run, showBanner } from '../core/state';
 import { healPlayer } from './combat';
 import { spawnGhost } from './effects';
 
 const DEFAULT_DASH = { distance: 140, duration: 0.16 };
-const NO_BOT_INPUT = Object.freeze({ dash: false, heavy: false, ult: false, fire: false });
 
-/** Movement input in [-1, 1], from the keyboard or the test bot. */
-function readMoveInput(): { x: number; y: number } {
-  if (DEBUG.bot) return { x: bot.moveX, y: bot.moveY };
-  const right = keysDown.d || keysDown.arrowright, left = keysDown.a || keysDown.arrowleft;
-  const down = keysDown.s || keysDown.arrowdown, up = keysDown.w || keysDown.arrowup;
-  return { x: (right ? 1 : 0) - (left ? 1 : 0), y: (down ? 1 : 0) - (up ? 1 : 0) };
-}
-
+/** Move, cool down and act for the current hero, from `run.hero.input`. */
 export function updatePlayer(dt: number): void {
-  const p = run.player, stats = run.stats;
+  const p = run.player, stats = run.stats, input = run.hero.input;
   const aim = mouseWorld();
   p.face = Math.atan2(aim.y - p.y, aim.x - p.x);
   p.iframes -= dt;
@@ -44,12 +34,12 @@ export function updatePlayer(dt: number): void {
   if (p.regenBuffTime > 0) p.regenBuffTime -= dt;
   if (regen > 0) healPlayer(regen * dt, true);
 
-  // actions
-  const botInput = DEBUG.bot ? bot : NO_BOT_INPUT;
-  if (keysPressed.space || keysPressed.shift || botInput.dash) tryDash();
-  if ((mouse.rightPressed || mouse.right || botInput.heavy) && p.heavyCooldown <= 0) useHeavy();
-  if (keysPressed.q || botInput.ult) tryUlt();
-  run.cls.strike(dt, mouse.left || botInput.fire);
+  // actions (one-shot presses are used up here)
+  if (input.dash) tryDash();
+  if (input.heavy && p.heavyCooldown <= 0) useHeavy();
+  if (input.ult) tryUlt();
+  input.dash = input.ult = false;
+  run.cls.strike(dt, input.fire);
 }
 
 function updateDashMovement(dt: number): void {
@@ -64,7 +54,7 @@ function updateDashMovement(dt: number): void {
 
 function updateWalking(dt: number): void {
   const p = run.player;
-  let { x: mx, y: my } = readMoveInput();
+  let mx = run.hero.input.moveX, my = run.hero.input.moveY;
   const len = Math.hypot(mx, my);
   if (len) { mx /= len; my /= len; }
   p.moveX = mx;

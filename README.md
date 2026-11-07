@@ -14,6 +14,21 @@ Needs [Node.js](https://nodejs.org) 22 or newer.
 Open `index.html` in a browser. It is fully self-contained apart from Google Fonts.
 `npm run build -- --watch` rebuilds on every save.
 
+## Online co-op (2-4 players, nothing to host)
+
+On the class screen, **Create room** (C) gives you a 5-letter room code; friends choose **Join room** (J) and type
+it, or open the invite link (`…/?room=CODE`). Everyone picks a class in the room, then the host presses Start.
+
+- Browsers connect directly with WebRTC. [PeerJS](https://peerjs.com)'s free public server only introduces
+  them (the room code becomes the host's PeerJS id, `sr-CODE`), and its public TURN relay is the fallback
+  when a network blocks direct links. Nothing runs on our side: the game stays a static page.
+- The host's browser runs the only simulation. Friends send their controls and card picks; the host sends
+  a snapshot of the world 20 times a second (about 12 KB each, so roughly 2 Mbit/s of upload per friend).
+- Co-op rules: XP is shared, everyone picks their own cards (the game waits for all), enemies chase the
+  nearest player and get tougher per player. At 0 HP you're down: a teammate standing next to you for
+  3 s revives you, or you return at the next wave. The run ends when everyone is down.
+- The host's tab must stay in front: browsers pause background tabs, which pauses the game for everyone.
+
 ## Check
 
     npm run typecheck    # tsc, strict mode (esbuild only strips types, it doesn't check them)
@@ -38,7 +53,8 @@ src/
   progression/  cards, relics, stat cards, level-up offers, rerolls
   classes/      registry + index (menu order) + one file per class
   render/       drawing primitives, world, HUD, screens (level up, menu, pause, result)
-  game/         run lifecycle, test bot, main loop
+  game/         run lifecycle, controls, test bot, main loop
+  net/          online co-op: PeerJS transport, snapshots, rooms / lobby / host / client
 scripts/        build script
 tests/          headless runner + smoke tests
 ```
@@ -48,6 +64,9 @@ Key conventions:
 - **State:** `run` (in `core/state.ts`) holds everything about the current run. `scene` is the current screen.
   Other modules read them directly but change them through `setRun()` / `setScene()`, since ES modules can't
   assign another module's variables. A class keeps its own typed state in `run.classState`.
+- **Heroes:** each player is a `Hero` in `run.heroes`. `run.player`, `run.stats`, `run.cls`, `run.cards`, …
+  read the *current* hero, which `withHero(hero, fn)` switches while the game acts for that player. Shots,
+  zones and timers remember the hero who made them, so class code written for one player works in co-op.
 - **Data first:** enemies (`ENEMY_TYPES`), bosses (`BOSS_DEFS`), relics, stat cards and each class's cards are plain data tables.
 - **Discriminated unions** model the variants (`Enemy = Mob | Boss`, zone kinds, effect kinds, telegraphs, offer items),
   so TypeScript checks each variant's fields.

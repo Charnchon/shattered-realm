@@ -2,8 +2,8 @@
 import type { AreaZone, MineZone, RingZone, TrapZone, Zone, ZoneRuntime, ZoneSpec } from '../types';
 import { COLOR } from '../core/constants';
 import { clamp } from '../core/math';
-import { run } from '../core/state';
-import { damageInCircle, hitEnemy, hurtPlayer, hurtPlayerOverTime } from './combat';
+import { asHero, livingHeroes, run } from '../core/state';
+import { damageInCircle, hitEnemy, hurtHero, hurtHeroOverTime } from './combat';
 import { spawnBurst } from './effects';
 import { enemiesInRadius } from './enemies';
 
@@ -14,6 +14,7 @@ export function addZone(spec: ZoneSpec): Zone {
   zone.tick = zone.tick || 0.25;
   zone.tickTimer = 0;
   zone.owner = zone.owner || 'player';
+  zone.hero = run.hero.idx;
   zone.max = zone.life;
   run.zones.push(zone);
   return zone;
@@ -21,30 +22,40 @@ export function addZone(spec: ZoneSpec): Zone {
 
 export function updateZones(dt: number): void {
   for (const z of run.zones) {
-    z.life -= dt;
-    z.t += dt;
-    if (z.follow) { z.x = z.follow.x; z.y = z.follow.y; }
-    switch (z.kind) {
-      case 'ring': updateRing(z); break;
-      case 'trap': updateTrap(z); break;
-      case 'mine': updateMine(z); break;
-      default:
-        z.tickTimer += dt;
-        if (z.tickTimer >= z.tick) {
-          z.tickTimer -= z.tick;
-          tickAreaZone(z);
-        }
-    }
+    // a player's zone acts as that player (damage credit, class hooks)
+    if (z.owner === 'player') asHero(z.hero, () => updateZone(z, dt));
+    else updateZone(z, dt);
   }
   run.zones = run.zones.filter((z) => z.life > 0);
 }
 
+function updateZone(z: Zone, dt: number): void {
+  z.life -= dt;
+  z.t += dt;
+  if (z.follow) { z.x = z.follow.x; z.y = z.follow.y; }
+  switch (z.kind) {
+    case 'ring': updateRing(z); break;
+    case 'trap': updateTrap(z); break;
+    case 'mine': updateMine(z); break;
+    default:
+      z.tickTimer += dt;
+      if (z.tickTimer >= z.tick) {
+        z.tickTimer -= z.tick;
+        tickAreaZone(z);
+      }
+  }
+}
+
+/** Shockwave: hits each hero once as the edge passes them. */
 function updateRing(z: RingZone & ZoneRuntime): void {
-  const p = run.player;
   z.currentR = z.startR + (z.endR - z.startR) * clamp(z.t / z.dur, 0, 1);
-  if (!z.hitPlayer && Math.abs(Math.hypot(p.x - z.x, p.y - z.y) - z.currentR) < 16) {
-    z.hitPlayer = true;
-    hurtPlayer(z.dmg);
+  const hit = (z.hitHeroes ??= []);
+  for (const h of livingHeroes()) {
+    const p = h.player;
+    if (!hit.includes(h.idx) && Math.abs(Math.hypot(p.x - z.x, p.y - z.y) - z.currentR) < 16) {
+      hit.push(h.idx);
+      hurtHero(h, z.dmg);
+    }
   }
   if (z.t >= z.dur) z.life = 0;
 }
@@ -79,8 +90,10 @@ function tickAreaZone(z: AreaZone & ZoneRuntime): void {
       if (z.onTick) z.onTick(e);
     }
     if (z.root) z.rooted = true;
-  } else {
-    const p = run.player;
-    if (Math.hypot(p.x - z.x, p.y - z.y) < z.r + p.r * 0.5 && z.dps) hurtPlayerOverTime(z.dps * z.tick);
+  } else if (z.dps) {
+    for (const h of livingHeroes()) {
+      const p = h.player;
+      if (Math.hypot(p.x - z.x, p.y - z.y) < z.r + p.r * 0.5) hurtHeroOverTime(h, z.dps * z.tick);
+    }
   }
 }

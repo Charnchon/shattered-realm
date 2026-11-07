@@ -1,16 +1,24 @@
 // ============================================================ main loop, scenes, boot
-import type { Rect, SceneId } from '../types';
+import type { Hero, Rect, SceneId } from '../types';
 import { canvas, ctx, viewport } from '../core/canvas';
-import { ARENA_H, ARENA_W, SCENE, VIEW_H, VIEW_W } from '../core/constants';
+import { SCENE, VIEW_H, VIEW_W } from '../core/constants';
 import { clearFrameInput, keysPressed, mouse, mouseIn } from '../core/input';
-import { clamp, dist, randInt, randPick } from '../core/math';
-import { DEBUG, hasRun, menuSelection, recalcStats, run, scene, setMenuSelection, setScene } from '../core/state';
+import { dist, randPick } from '../core/math';
+import { DEBUG, hasRun, livingHeroes, localHero, menuSelection, run, scene, setMenuSelection, setScene, updateCamera, withHero } from '../core/state';
 import { CLASSES, CLASS_ORDER } from '../classes/registry';
-import { applyPick, makeOffer, tryReroll } from '../progression/cards';
+import { applyPick, makeOffer, offerPendingLevelUps, tryReroll } from '../progression/cards';
 import { drawHUD } from '../render/hud';
-import { drawLevelUp, drawMenu, drawPause, drawResult, levelCardRects, menuCardRects, pauseButtons, rerollButtonRect, resultButtons } from '../render/screens';
+import {
+  drawJoin, drawLevelUp, drawLobby, drawMenu, drawOnlineMenu, drawPause, drawResult, levelCardRects, menuCardRects, menuOnlineButtons,
+  pauseButtons, rerollButtonRect, resultButtons,
+} from '../render/screens';
+import {
+  acceptConnection, connectToHost, hostGame, joinFromUrl, leaveOnline, net, netTick, pasteIntoJoin, startOnlineGame,
+  updateClientScene, updateHostResult, updateJoin, updateLobby, updateOnlineMenu,
+} from '../net/session';
+import { encodeSnapshot } from '../net/snapshot';
 import { drawWorld } from '../render/world';
-import { hurtPlayerOverTime } from '../world/combat';
+import { hurtHero, hurtHeroOverTime, reviveHero } from '../world/combat';
 import { updateEffects } from '../world/effects';
 import { spawnEnemy, updateEnemies } from '../world/enemies';
 import { updatePickups } from '../world/pickups';
@@ -19,19 +27,23 @@ import { updateShots } from '../world/projectiles';
 import { updateWave } from '../world/waves';
 import { updateZones } from '../world/zones';
 import { botThink } from './bot';
-import { newRun } from './run';
+import { applyInput, readLocalInput } from './controls';
+import { newRun, newRunWith } from './run';
 
 const MAX_FRAME_DT = 0.05;
 const MENU_KEYS = ['1', '2', '3', '4'];
 const OFFER_KEYS = ['1', '2', '3'];
 
+/** Is this hero played by the test bot? */
+const isBotControlled = (h: Hero): boolean => h.bot || (DEBUG.bot && h.idx === run.localHero);
+
 /** Advance the simulation by `dt` seconds (play scene only). */
 export function step(dt: number): void {
-  if (DEBUG.bot) botThink(dt);
+  for (const h of livingHeroes()) if (isBotControlled(h)) botThink(h, dt);
   run.time += dt;
-  updatePlayer(dt);
+  for (const h of livingHeroes()) withHero(h, () => updatePlayer(dt));
   if (scene !== SCENE.PLAY) return;
-  run.cls.update(dt);
+  for (const h of livingHeroes()) withHero(h, () => h.cls.update(dt));
   updateEnemies(dt);
   updateShots(dt);
   updateZones(dt);
@@ -39,7 +51,10 @@ export function step(dt: number): void {
   if (scene !== SCENE.PLAY) return; // the run may have ended this frame
   updateWave(dt);
   updateEffects(dt);
-  if (run.safeZone && dist(run.player, run.safeZone) > run.safeZone.r) hurtPlayerOverTime(10 * dt);
+  updateRevives(dt);
+  const zone = run.safeZone;
+  if (zone) for (const h of livingHeroes()) if (dist(h.player, zone) > zone.r) hurtHeroOverTime(h, 10 * dt);
+  if (scene !== SCENE.PLAY) return;
   run.enemies = run.enemies.filter((e) => !e.dead);
   if (run.banner) {
     run.banner.time -= dt;
@@ -47,16 +62,28 @@ export function step(dt: number): void {
   }
   run.shake = Math.max(0, run.shake - dt * 20);
   updateCamera();
-  if (run.pendingLevelUps > 0 && scene === SCENE.PLAY) {
-    recalcStats();
-    makeOffer();
-    setScene(SCENE.LEVEL_UP);
+  if (offerPendingLevelUps()) setScene(SCENE.LEVEL_UP);
+}
+
+const REVIVE_RADIUS = 46;
+const REVIVE_SECONDS = 3;
+const REVIVE_HP = 0.4;
+
+/** Standing next to a downed teammate revives them after a few seconds. */
+function updateRevives(dt: number): void {
+  for (const h of run.heroes) {
+    if (!h.down || h.gone) continue;
+    const helped = livingHeroes().some((o) => dist(o.player, h.player) < REVIVE_RADIUS);
+    h.revive = helped ? h.revive + dt / REVIVE_SECONDS : Math.max(0, h.revive - dt / REVIVE_SECONDS);
+    if (h.revive >= 1) reviveHero(h, REVIVE_HP);
   }
 }
 
-function updateCamera(): void {
-  run.camera.x = clamp(run.player.x - VIEW_W / 2, -40, ARENA_W - VIEW_W + 40);
-  run.camera.y = clamp(run.player.y - VIEW_H / 2, -40, ARENA_H - VIEW_H + 40);
+/** Bots (and heroes who left) choose a random card. */
+function autoPickForBots(): void {
+  for (const h of run.heroes) {
+    if (h.offer && (isBotControlled(h) || h.gone)) withHero(h, () => applyPick(randPick(h.offer!.items)));
+  }
 }
 
 /** Index of the rect under the mouse, or -1. */
@@ -72,10 +99,18 @@ const SCENE_UPDATE: Record<SceneId, (dt: number) => void> = {
     if (keysPressed.arrowleft || keysPressed.a) setMenuSelection((menuSelection + count - 1) % count);
     if (keysPressed.enter || keysPressed.space) newRun(CLASS_ORDER[menuSelection]);
     if (keysPressed.g) DEBUG.god = !DEBUG.god;
+    const online = menuOnlineButtons();
+    if (keysPressed.c || (mouse.leftPressed && mouseIn(online.host))) hostGame(CLASS_ORDER[menuSelection]);
+    else if (keysPressed.j || (mouse.leftPressed && mouseIn(online.join))) { net.joinText = ''; net.status = ''; net.notice = ''; setScene(SCENE.JOIN); }
   },
   play(dt) {
-    if (keysPressed.escape || keysPressed.p) setScene(SCENE.PAUSE);
-    else step(dt);
+    const me = localHero();
+    if (net.mode === 'host') {
+      // online games don't pause: Esc opens a leave panel while the game runs on
+      if (updateOnlineMenu()) { applyInput(me.input, { ...me.input, moveX: 0, moveY: 0, fire: false, heavy: false }); step(dt); return; }
+    } else if (keysPressed.escape || keysPressed.p) { setScene(SCENE.PAUSE); return; }
+    if (!isBotControlled(me)) applyInput(me.input, readLocalInput(run.camera));
+    step(dt);
   },
   pause() {
     if (keysPressed.escape || keysPressed.p) setScene(SCENE.PLAY);
@@ -84,24 +119,32 @@ const SCENE_UPDATE: Record<SceneId, (dt: number) => void> = {
     if (mouse.leftPressed && mouseIn(b.quit)) setScene(SCENE.MENU);
   },
   levelup() {
-    const offer = run.offer;
-    if (!offer) return;
+    autoPickForBots();
+    const offer = run.offer; // this screen's hero
+    if (!offer) return; // already chosen: waiting for the others
     offer.hover = hoveredIndex(levelCardRects());
     let chosen = mouse.leftPressed ? offer.hover : -1;
     OFFER_KEYS.forEach((k, i) => { if (keysPressed[k]) chosen = i; });
-    if (DEBUG.bot) chosen = randInt(0, offer.items.length - 1);
     if (chosen >= 0 && offer.items[chosen]) applyPick(offer.items[chosen]);
     else if (keysPressed.r || (mouse.leftPressed && mouseIn(rerollButtonRect()))) tryReroll();
   },
+  lobby() { updateLobby(); },
+  join() { updateJoin(CLASS_ORDER[menuSelection]); },
   result() {
+    if (net.mode === 'host') { updateHostResult(); return; }
     const b = resultButtons();
     if ((mouse.leftPressed && mouseIn(b.again)) || keysPressed.enter) newRun(run.classId);
     else if ((mouse.leftPressed && mouseIn(b.menu)) || keysPressed.escape) setScene(SCENE.MENU);
   },
 };
 
+const GAME_SCENES: SceneId[] = [SCENE.PLAY, SCENE.LEVEL_UP, SCENE.PAUSE, SCENE.RESULT];
+
 export function update(dt: number): void {
-  SCENE_UPDATE[scene](dt);
+  // a joined player never simulates: it sends input and shows the host's snapshots
+  if (net.mode === 'client' && GAME_SCENES.includes(scene)) updateClientScene();
+  else SCENE_UPDATE[scene](dt);
+  netTick(dt);
   clearFrameInput();
 }
 
@@ -115,13 +158,16 @@ export function render(): void {
   ctx.beginPath();
   ctx.rect(0, 0, VIEW_W, VIEW_H);
   ctx.clip();
-  if (scene === SCENE.MENU || !hasRun()) drawMenu();
+  if (scene === SCENE.LOBBY) drawLobby();
+  else if (scene === SCENE.JOIN) drawJoin();
+  else if (scene === SCENE.MENU || !hasRun()) drawMenu();
   else {
     drawWorld();
     drawHUD();
     if (scene === SCENE.LEVEL_UP) drawLevelUp();
     if (scene === SCENE.PAUSE) drawPause();
     if (scene === SCENE.RESULT) drawResult();
+    if (scene === SCENE.PLAY && net.menuOpen) drawOnlineMenu();
   }
   ctx.restore();
 }
@@ -147,10 +193,17 @@ export function boot(): void {
     document.fonts.load('16px "Pixelify Sans"').catch(() => {});
     document.fonts.load('16px Rubik').catch(() => {});
   }
+  window.addEventListener('paste', (e) => pasteIntoJoin(e.clipboardData?.getData('text') ?? ''));
   installTestHooks();
+  joinFromUrl(CLASS_ORDER[menuSelection]);
 }
 
 // ------------------------------------------------------------ debug and test hooks (harmless in normal play)
+
+/** Test helper: every hero with an offer picks a random card. */
+function pickRandomForEveryone(): void {
+  for (const h of run.heroes) if (h.offer) withHero(h, () => applyPick(randPick(h.offer!.items)));
+}
 
 declare global {
   interface Window {
@@ -160,7 +213,9 @@ declare global {
 
 function installTestHooks(): void {
   window.__SR = {
-    DEBUG, CLASSES, newRun, step, update, render, makeOffer, applyPick, spawnEnemy,
+    DEBUG, CLASSES, newRun, newRunWith, step, update, render, makeOffer, applyPick, spawnEnemy, pickRandomForEveryone, hurtHero,
+    /** Online session (tests connect two game instances in memory). */
+    net, hostGame, acceptConnection, connectToHost, startOnlineGame, leaveOnline, encodeSnapshot,
     get run() { return run; },
     /** @deprecated alias of `run`, kept for older test scripts. */
     get G() { return run; },
@@ -171,7 +226,7 @@ function installTestHooks(): void {
       const dt = 1 / 60;
       let t = 0;
       while (t < seconds) {
-        if (scene === SCENE.LEVEL_UP && run.offer) { applyPick(randPick(run.offer.items)); continue; }
+        if (scene === SCENE.LEVEL_UP) { pickRandomForEveryone(); continue; }
         if (scene !== SCENE.PLAY) break;
         step(dt);
         t += dt;

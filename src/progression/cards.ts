@@ -4,7 +4,7 @@ import type {
 } from '../types';
 import { SCENE } from '../core/constants';
 import { randPick, shuffle, weightedPick } from '../core/math';
-import { hasCard, isEvolved, recalcStats, relicLevel, run, setScene, showBanner } from '../core/state';
+import { hasCard, isEvolved, recalcStats, relicLevel, run, setScene, showBanner, withHero } from '../core/state';
 
 export const OFFER_SIZE = 3;
 export const CARD_MAX_LEVEL = 5;
@@ -228,7 +228,21 @@ export function applyPick(item: OfferItem): void {
   run.pendingLevelUps--;
   run.offer = null;
   if (run.pendingLevelUps > 0) makeOffer();
-  else setScene(SCENE.PLAY);
+  else if (everyoneHasChosen()) setScene(SCENE.PLAY);
+}
+
+/** The game resumes once no hero is left with a card to choose. */
+export const everyoneHasChosen = (): boolean => run.heroes.every((h) => h.gone || !h.offer);
+
+/** Start offers for every hero with level-ups waiting. Returns true if anyone has a choice to make. */
+export function offerPendingLevelUps(): boolean {
+  let any = false;
+  for (const h of run.heroes) {
+    if (h.gone || h.pendingLevelUps <= 0) continue;
+    any = true;
+    if (!h.offer) withHero(h, () => { recalcStats(); makeOffer(); });
+  }
+  return any;
 }
 
 /** Free rerolls first; some classes can then pay coins (`rerollCost` hook). */

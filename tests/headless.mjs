@@ -39,6 +39,8 @@ export function loadGame({ seed = 1 } = {}) {
     console,
     performance: { now: () => 0 },
     requestAnimationFrame: () => 0,
+    setTimeout: () => 0,
+    clearTimeout: () => {},
     document: { getElementById: () => canvas },
     window: { addEventListener() {}, innerWidth: 960, innerHeight: 540, devicePixelRatio: 1 },
   };
@@ -48,6 +50,33 @@ export function loadGame({ seed = 1 } = {}) {
   const sr = sandbox.window.__SR;
   const randomIndex = vm.runInContext('(n) => Math.floor(Math.random() * n)', sandbox);
   return { sr, counter, randomIndex };
+}
+
+/**
+ * Co-op: one bot-played hero per class id, in god mode, everyone picking random cards.
+ * Calls `onFrame(run)` after each simulated frame.
+ */
+export function playCoopWithBots(game, classIds, seconds, { onFrame, onLevelUp, renderEvery = 30 } = {}) {
+  const { sr } = game;
+  sr.DEBUG.god = true;
+  sr.newRunWith(classIds.map((classId, i) => ({ classId, name: 'Bot ' + (i + 1), bot: true })), 0);
+  const dt = 1 / 60;
+  let t = 0, frame = 0;
+  while (t < seconds) {
+    if (sr.scene === 'levelup') {
+      sr.render();
+      if (onLevelUp) onLevelUp(sr.run);
+      sr.pickRandomForEveryone();
+      continue;
+    }
+    if (sr.scene !== 'play') break;
+    sr.step(dt);
+    t += dt;
+    frame++;
+    if (onFrame) onFrame(sr.run);
+    if (frame % renderEvery === 0) sr.render();
+  }
+  return sr.run;
 }
 
 /**

@@ -56,6 +56,10 @@ export const SCENE = {
   PAUSE: 'pause',
   LEVEL_UP: 'levelup',
   RESULT: 'result',
+  /** Online: waiting room with the room code. */
+  LOBBY: 'lobby',
+  /** Online: typing a room code. */
+  JOIN: 'join',
 } as const;
 
 export const FINAL_WAVE = 12;
