@@ -2,7 +2,7 @@
 import type { Hero, Rect, SceneId } from '../types';
 import { canvas, ctx, viewport } from '../core/canvas';
 import { SCENE, VIEW_H, VIEW_W } from '../core/constants';
-import { clearFrameInput, keysPressed, mouse, mouseIn } from '../core/input';
+import { clearFrameInput, keysDown, keysPressed, mouse, mouseIn } from '../core/input';
 import { dist, randPick } from '../core/math';
 import { DEBUG, hasRun, livingHeroes, localHero, menuSelection, run, scene, setMenuSelection, setScene, updateCamera, withHero } from '../core/state';
 import { CLASSES, CLASS_ORDER } from '../classes/registry';
@@ -142,7 +142,7 @@ const GAME_SCENES: SceneId[] = [SCENE.PLAY, SCENE.LEVEL_UP, SCENE.PAUSE, SCENE.R
 
 export function update(dt: number): void {
   // a joined player never simulates: it sends input and shows the host's snapshots
-  if (net.mode === 'client' && GAME_SCENES.includes(scene)) updateClientScene();
+  if (net.mode === 'client' && GAME_SCENES.includes(scene)) updateClientScene(dt);
   else SCENE_UPDATE[scene](dt);
   netTick(dt);
   clearFrameInput();
@@ -216,6 +216,8 @@ function installTestHooks(): void {
     DEBUG, CLASSES, newRun, newRunWith, step, update, render, makeOffer, applyPick, spawnEnemy, pickRandomForEveryone, hurtHero,
     /** Online session (tests connect two game instances in memory). */
     net, hostGame, acceptConnection, connectToHost, startOnlineGame, leaveOnline, encodeSnapshot,
+    /** Held / pressed-this-frame keys, so tests can play like a person. */
+    keysDown, keysPressed,
     get run() { return run; },
     /** @deprecated alias of `run`, kept for older test scripts. */
     get G() { return run; },

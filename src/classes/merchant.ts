@@ -180,6 +180,7 @@ registerClass({
     }
     return { dist: 120 };
   },
+  dashShape: () => ({ dist: 120 }),
 
   /** Biscuit's Feast: Biscuit grows, bites everything nearby, and all pickups fly to you. */
   ult() {

@@ -45,6 +45,7 @@ export interface HeroSnap {
   magnetAllTime: number;
   allies: Hero['allies'];
   classState: unknown;
+  ack?: number;
 }
 
 export interface Snapshot {
@@ -118,7 +119,7 @@ function snapHero(h: Hero): HeroSnap {
     idx: h.idx, name: h.name, classId: h.classId, down: h.down, revive: h.revive, gone: h.gone,
     player: h.player, stats: h.stats, cardSlots: h.cardSlots, cards: h.cards, relics: h.relics, statCards: h.statCards,
     pendingLevelUps: h.pendingLevelUps, offer: h.offer, rerolls: h.rerolls, coinsHeld: h.coinsHeld,
-    magnetAllTime: h.magnetAllTime, allies: h.allies, classState: h.classState,
+    magnetAllTime: h.magnetAllTime, allies: h.allies, classState: h.classState, ack: h.ack,
   };
 }
 

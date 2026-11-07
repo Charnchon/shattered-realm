@@ -1,5 +1,5 @@
 // ============================================================ Necromancer: skeleton commander
-import type { CardDef, Enemy, HitOptions, Point } from '../types';
+import type { CardDef, DashOverride, Enemy, HitOptions, Point } from '../types';
 import { ARENA_H, ARENA_W, TAU } from '../core/constants';
 import { ctx } from '../core/canvas';
 import { clamp, degToRad, dist, distSq, randRange } from '../core/math';
@@ -156,21 +156,11 @@ registerClass({
 
   /** Grave Step: jump to the skeleton nearest the cursor, or a short hop if none is close. */
   dash() {
-    const p = run.player, cs = state(), aim = mouseWorld();
-    const reach = 250 * (hasCard('long_leash') ? 1.8 * cardMul('long_leash', 'range') : 1);
-    let best: Skeleton | null = null, bestSq = 80 * 80;
-    for (const s of cs.skeletons) {
-      if (!isStanding(s)) continue;
-      const dSq = distSq(s, aim);
-      if (dSq < bestSq && distSq(s, p) < reach * reach) { bestSq = dSq; best = s; }
-    }
-    cs.dashTarget = best;
-    if (best) {
-      const a = Math.atan2(best.y - p.y, best.x - p.x), distance = Math.max(20, dist(best, p) - 14);
-      return { ang: a, dist: distance, dur: Math.min(0.28, 0.12 + distance / 1600) };
-    }
-    return { ang: Math.atan2(aim.y - p.y, aim.x - p.x), dist: 120 };
+    const best = boneSwapTarget();
+    state().dashTarget = best;
+    return boneSwapShape(best);
   },
+  dashShape: () => boneSwapShape(boneSwapTarget()),
   onDashEnd() {
     const p = run.player, cs = state();
     if (cs.dashTarget) {
@@ -277,6 +267,30 @@ registerClass({
     return { label: 'Skeletons', value: standing, frac: Math.min(1, standing / Math.max(3, maxSkeletons())), color: BONE_COLOR };
   },
 });
+
+/** Grave Step target: the standing skeleton nearest the cursor, within reach. */
+function boneSwapTarget(): Skeleton | null {
+  const p = run.player, aim = mouseWorld();
+  const reach = 250 * (hasCard('long_leash') ? 1.8 * cardMul('long_leash', 'range') : 1);
+  let best: Skeleton | null = null, bestSq = 80 * 80;
+  for (const s of state().skeletons) {
+    if (!isStanding(s)) continue;
+    const dSq = distSq(s, aim);
+    if (dSq < bestSq && distSq(s, p) < reach * reach) { bestSq = dSq; best = s; }
+  }
+  return best;
+}
+
+/** Jump to the skeleton, or a short hop toward the cursor. */
+function boneSwapShape(target: Skeleton | null): DashOverride {
+  const p = run.player;
+  if (target) {
+    const a = Math.atan2(target.y - p.y, target.x - p.x), distance = Math.max(20, dist(target, p) - 14);
+    return { ang: a, dist: distance, dur: Math.min(0.28, 0.12 + distance / 1600) };
+  }
+  const aim = mouseWorld();
+  return { ang: Math.atan2(aim.y - p.y, aim.x - p.x), dist: 120 };
+}
 
 function maxSkeletons(): number {
   return BASE_SKELETONS + (hasCard('restless_graves') ? 1 + cardExtraProjectiles('restless_graves') : 0);

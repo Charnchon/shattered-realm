@@ -12,6 +12,7 @@ import { endRun, newRunWith } from '../game/run';
 import { applyPick, tryReroll } from '../progression/cards';
 import { joinButtons, levelCardRects, lobbyButtons, rerollButtonRect, resultButtons } from '../render/screens';
 import { ageVisualEffects } from '../world/effects';
+import { isPredicting, nextInputSeq, placeLocalHero, predictLocalHero, reconcile, resetPrediction } from './prediction';
 import { decodeSnapshot, encodeSnapshot, parseMessage, type Snapshot } from './snapshot';
 import { CODE_LENGTH, cleanRoomCode, joinRoom, openRoom, randomRoomCode, type Conn, type PeerHandle } from './transport';
 
@@ -70,6 +71,7 @@ function reset(): void {
   Object.assign(net, { mode: 'offline', code: '', status: '', players: [], you: 0, menuOpen: false });
   pickedOfferKey = '';
   sinceSnapshot = 0;
+  resetPrediction();
 }
 
 /** Close the session and go back to class select, optionally with a message. */
@@ -129,7 +131,10 @@ function onClientMessage(conn: Conn, msg: ReturnType<typeof parseMessage>): void
       break;
     case 'input': {
       const hero = hasRun() ? run.heroes[slot] : undefined;
-      if (hero && scene === SCENE.PLAY) applyInput(hero.input, sanitizeInput(msg.input));
+      if (hero && scene === SCENE.PLAY) {
+        applyInput(hero.input, sanitizeInput(msg.input));
+        if (typeof msg.seq === 'number') hero.ack = msg.seq;
+      }
       break;
     }
     case 'pick': {
@@ -299,7 +304,13 @@ function applySnapshot(snap: Snapshot): void {
   sinceSnapshot = 0;
   const shown: SceneId = snap.scene === SCENE.PAUSE ? SCENE.PLAY : snap.scene;
   if (scene !== shown) setScene(shown);
+  if (shown === SCENE.RESULT) resetPrediction();
   smoothPositions(0);
+  // our own hero: check the guess against the host, then draw it where this screen predicts
+  if (mine) {
+    reconcile(mine);
+    placeLocalHero(mine, 0);
+  }
 }
 
 const offerKey = (offer: NonNullable<Run['offer']>): string => offer.items.map((i) => i.kind + ':' + i.def.id + ':' + i.rarity).join('|');
@@ -314,7 +325,10 @@ function smoothPositions(dt: number): void {
     obj.y = g.fromY + (g.toY - g.fromY) * k;
   };
   for (const e of run.enemies) glide(e);
-  for (const h of run.heroes) glide(h.player);
+  for (const h of run.heroes) {
+    if (h.idx === net.you && isPredicting()) continue; // placed by prediction instead
+    glide(h.player);
+  }
   for (const s of run.shots) { s.x += s.vx * dt; s.y += s.vy * dt; }
 }
 
@@ -323,9 +337,10 @@ function clientTick(dt: number): void {
   sinceSnapshot += dt;
   smoothPositions(dt);
   ageVisualEffects(dt);
+  const me = localHero();
+  if (me) placeLocalHero(me, dt);
   updateCamera();
   // aim feels instant: point our own hero at the mouse without waiting for the host
-  const me = localHero();
   if (me && !me.down) {
     const aim = withHero(me, mouseWorld);
     me.player.face = Math.atan2(aim.y - me.player.y, aim.x - me.player.x);
@@ -400,7 +415,7 @@ export function updateOnlineMenu(): boolean {
 }
 
 /** Client: what this screen does in play, level-up and result. */
-export function updateClientScene(): void {
+export function updateClientScene(dt: number): void {
   if (!hasRun()) return;
   if (scene === SCENE.PLAY) {
     const menuOpen = updateOnlineMenu();
@@ -408,7 +423,10 @@ export function updateClientScene(): void {
     // read this frame's keys now: one-shot presses are cleared at the end of the frame
     const input = readLocalInput(run.camera);
     me.input = menuOpen ? { ...input, moveX: 0, moveY: 0, fire: false, heavy: false, dash: false, ult: false } : input;
-    send(hostConn, { t: 'input', input: me.input });
+    const seq = nextInputSeq();
+    send(hostConn, { t: 'input', input: me.input, seq });
+    // move our own hero now instead of waiting for the host's reply
+    predictLocalHero(me, me.input, seq, dt);
   } else if (scene === SCENE.LEVEL_UP) {
     const offer = run.offer;
     if (!offer) return;

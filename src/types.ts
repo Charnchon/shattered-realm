@@ -463,6 +463,11 @@ export interface ClassDef {
 
   // optional hooks
   dash?(dx: number, dy: number): DashOverride;
+  /**
+   * Where a dash goes, with no side effects (`dash` may fire shots or drop zones). Online, a joined
+   * player's screen uses it to move their hero the instant they dash. Must agree with `dash`.
+   */
+  dashShape?(dx: number, dy: number): DashOverride;
   onDashMove?(dt: number): void;
   onDashEnd?(): void;
   modifyStats?(stats: Stats): void;
@@ -547,6 +552,8 @@ export interface Hero {
   revive: number;
   /** Left the game (online). Never comes back this run. */
   gone: boolean;
+  /** Online: number of the latest input from this player the host has applied (for prediction). */
+  ack?: number;
 }
 
 /** Everything about the current run. */

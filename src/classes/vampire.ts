@@ -1,5 +1,5 @@
 // ============================================================ Vampire: melee sustain
-import type { CardDef, Enemy, HitOptions, Point, Stats } from '../types';
+import type { CardDef, DashOverride, Enemy, HitOptions, Point, Stats } from '../types';
 import { ARENA_H, ARENA_W, COLOR, TAU } from '../core/constants';
 import { ctx } from '../core/canvas';
 import { clamp, degToRad, distSq, randPick, randRange } from '../core/math';
@@ -175,8 +175,9 @@ registerClass({
   dash() {
     state().mistHit = new Set();
     state().trailTimer = 0;
-    return { dist: 140 * (hasCard('mist_form') ? cardMul('mist_form', 'range') : 1) };
+    return mistStepShape();
   },
+  dashShape: () => mistStepShape(),
   onDashMove(dt: number) {
     const p = run.player, cs = state(), mist = hasCard('mist_form');
     for (const e of enemiesInRadius(p.x, p.y, 18 * (mist ? cardMul('mist_form', 'range') : 1))) {
@@ -268,6 +269,8 @@ registerClass({
     return { label: 'Blood Shield', value: Math.round(shield), frac: Math.min(1, shield / (run.stats.maxHp * SHIELD_CAP_FRAC)), color: VAMPIRE_RED };
   },
 });
+
+const mistStepShape = (): DashOverride => ({ dist: 140 * (hasCard('mist_form') ? cardMul('mist_form', 'range') : 1) });
 
 function shieldCap(): number {
   return run.stats.maxHp * (state().moonTime > 0 ? 1 : SHIELD_CAP_FRAC);

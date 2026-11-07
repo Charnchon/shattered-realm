@@ -1,5 +1,5 @@
 // ============================================================ Cleric: holy light
-import type { CardDef, Enemy, HitOptions, Point, Stats } from '../types';
+import type { CardDef, DashOverride, Enemy, HitOptions, Point, Stats } from '../types';
 import { COLOR, TAU, VIEW_H, VIEW_W } from '../core/constants';
 import { ctx } from '../core/canvas';
 import { distSq, randPick, randRange } from '../core/math';
@@ -149,8 +149,9 @@ registerClass({
   dash() {
     state().trailTimer = 0;
     state().trailHealed = new Set();
-    return { dist: 130 * (hasCard('holy_leap') ? 1.4 * cardMul('holy_leap', 'range') : 1) };
+    return radiantStepShape();
   },
+  dashShape: () => radiantStepShape(),
   onDashMove(dt: number) {
     const cs = state(), p = run.player;
     cs.trailTimer -= dt;
@@ -246,6 +247,8 @@ registerClass({
     return { label: 'Faith', value: Math.round(faith), frac: faith / FAITH_MAX, color: HOLY_COLOR };
   },
 });
+
+const radiantStepShape = (): DashOverride => ({ dist: 130 * (hasCard('holy_leap') ? 1.4 * cardMul('holy_leap', 'range') : 1) });
 
 function pillar(x: number, y: number, damage: number, radius: number): void {
   damageInCircle(x, y, radius, damage, { tag: 'pillar', color: HOLY_COLOR });

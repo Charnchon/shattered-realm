@@ -1,4 +1,5 @@
 // ============================================================ player (the current hero, see withHero)
+import type { DashOverride } from '../types';
 import { ARENA_H, ARENA_W } from '../core/constants';
 import { clamp } from '../core/math';
 import { mouseWorld, run, showBanner } from '../core/state';
@@ -19,10 +20,16 @@ export function updatePlayer(dt: number): void {
     if (p.boneShieldTime <= 0) p.boneShield = 0;
   }
 
-  if (p.dashTime > 0) updateDashMovement(dt);
-  else updateWalking(dt);
-  p.x = clamp(p.x, p.r, ARENA_W - p.r);
-  p.y = clamp(p.y, p.r, ARENA_H - p.r);
+  const dashing = p.dashTime > 0;
+  const walk = moveHero(p, input.moveX, input.moveY, stats.moveSpeed, dt);
+  if (dashing) {
+    if (run.cls.onDashMove) run.cls.onDashMove(dt);
+    if (Math.random() < 0.6) spawnGhost(p.x, p.y, run.cls.color);
+    if (p.dashTime <= 0 && run.cls.onDashEnd) run.cls.onDashEnd();
+  } else {
+    p.moveX = walk.x;
+    p.moveY = walk.y;
+  }
 
   // cooldowns and regeneration
   if (p.dashCharges < stats.dashCharges) {
@@ -42,25 +49,52 @@ export function updatePlayer(dt: number): void {
   run.cls.strike(dt, input.fire);
 }
 
-function updateDashMovement(dt: number): void {
-  const p = run.player;
-  p.dashTime -= dt;
-  p.x += p.dashVx * dt;
-  p.y += p.dashVy * dt;
-  if (run.cls.onDashMove) run.cls.onDashMove(dt);
-  if (Math.random() < 0.6) spawnGhost(p.x, p.y, run.cls.color);
-  if (p.dashTime <= 0 && run.cls.onDashEnd) run.cls.onDashEnd();
+/** The part of a hero that moves. An online client predicts this for its own hero. */
+export interface Motion {
+  x: number;
+  y: number;
+  r: number;
+  dashTime: number;
+  dashVx: number;
+  dashVy: number;
 }
 
-function updateWalking(dt: number): void {
-  const p = run.player;
-  let mx = run.hero.input.moveX, my = run.hero.input.moveY;
-  const len = Math.hypot(mx, my);
-  if (len) { mx /= len; my /= len; }
-  p.moveX = mx;
-  p.moveY = my;
-  p.x += mx * run.stats.moveSpeed * dt;
-  p.y += my * run.stats.moveSpeed * dt;
+/**
+ * One frame of movement: gliding through a dash, or walking at `moveSpeed` (input is normalised).
+ * Shared by the host's simulation and a client's prediction so they agree. Returns the walk direction.
+ */
+export function moveHero(m: Motion, moveX: number, moveY: number, moveSpeed: number, dt: number): { x: number; y: number } {
+  let mx = 0, my = 0;
+  if (m.dashTime > 0) {
+    m.dashTime -= dt;
+    m.x += m.dashVx * dt;
+    m.y += m.dashVy * dt;
+  } else {
+    mx = moveX; my = moveY;
+    const len = Math.hypot(mx, my);
+    if (len) { mx /= len; my /= len; }
+    m.x += mx * moveSpeed * dt;
+    m.y += my * moveSpeed * dt;
+  }
+  m.x = clamp(m.x, m.r, ARENA_W - m.r);
+  m.y = clamp(m.y, m.r, ARENA_H - m.r);
+  return { x: mx, y: my };
+}
+
+/** Start a dash toward (dx, dy), or where `shape` says. Returns its duration. */
+export function startDash(m: Motion, dx: number, dy: number, shape: DashOverride | null): number {
+  const distance = (shape && shape.dist) || DEFAULT_DASH.distance;
+  const duration = (shape && shape.dur) || DEFAULT_DASH.duration;
+  const angle = shape && shape.ang != null ? shape.ang : Math.atan2(dy, dx);
+  m.dashVx = (Math.cos(angle) * distance) / duration;
+  m.dashVy = (Math.sin(angle) * distance) / duration;
+  m.dashTime = duration;
+  return duration;
+}
+
+/** The dash direction: where you're walking, or where you face when standing still. */
+export function dashDirection(moveX: number, moveY: number, face: number): { x: number; y: number } {
+  return moveX || moveY ? { x: moveX, y: moveY } : { x: Math.cos(face), y: Math.sin(face) };
 }
 
 /** Dash in the move direction (or facing, when standing still). Classes may override distance/time/angle. */
@@ -69,15 +103,8 @@ function tryDash(): void {
   if (p.dashCharges <= 0 || p.dashTime > 0) return;
   p.dashCharges--;
   if (p.dashCooldown <= 0) p.dashCooldown = run.stats.dashCooldown;
-  let dx = p.moveX, dy = p.moveY;
-  if (!dx && !dy) { dx = Math.cos(p.face); dy = Math.sin(p.face); }
-  const override = run.cls.dash ? run.cls.dash(dx, dy) : null;
-  const distance = (override && override.dist) || DEFAULT_DASH.distance;
-  const duration = (override && override.dur) || DEFAULT_DASH.duration;
-  const angle = override && override.ang != null ? override.ang : Math.atan2(dy, dx);
-  p.dashVx = (Math.cos(angle) * distance) / duration;
-  p.dashVy = (Math.sin(angle) * distance) / duration;
-  p.dashTime = duration;
+  const dir = dashDirection(p.moveX, p.moveY, p.face);
+  const duration = startDash(p, dir.x, dir.y, run.cls.dash ? run.cls.dash(dir.x, dir.y) : null);
   p.iframes = Math.max(p.iframes, duration + 0.08);
 }
 

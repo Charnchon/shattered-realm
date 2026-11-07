@@ -4,9 +4,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadGame } from './headless.mjs';
 
-/** Two connected ends. Messages queue up until `pump()`, like a real network between frames. */
-function linkedConnections() {
+/**
+ * Two connected ends. Messages queue up until `pump()`, like a real network between frames.
+ * With `latencyFrames`, each message waits that many `pump()` calls first (one-way delay).
+ */
+function linkedConnections({ latencyFrames = 0 } = {}) {
   const queue = [];
+  let now = 0;
   const stats = { maxBytes: 0, snapshots: 0 };
   const makeEnd = () => ({ onMsg: [], onClose: [], closed: false, peer: null });
   const a = makeEnd(), b = makeEnd();
@@ -15,7 +19,9 @@ function linkedConnections() {
     send(text) {
       if (end.closed) return;
       if (text.startsWith('{"t":"snap"')) { stats.snapshots++; stats.maxBytes = Math.max(stats.maxBytes, text.length); }
-      queue.push(() => { if (!end.peer.closed) end.peer.onMsg.forEach((cb) => cb(text)); });
+      const deliver = () => { if (!end.peer.closed) end.peer.onMsg.forEach((cb) => cb(text)); };
+      deliver.at = now + latencyFrames;
+      queue.push(deliver);
     },
     close() {
       if (end.closed) return;
@@ -30,21 +36,25 @@ function linkedConnections() {
     onMessage(cb) { end.onMsg.push(cb); },
     onClose(cb) { end.onClose.push(cb); },
   });
-  const pump = () => { while (queue.length) queue.shift()(); };
+  /** Deliver everything that is due (in order), then advance the clock one step. */
+  const pump = () => {
+    while (queue.length && (queue[0].at === undefined || queue[0].at <= now)) queue.shift()();
+    now++;
+  };
   return { hostEnd: api(a), friendEnd: api(b), pump, stats };
 }
 
 /** Host (bot-played cleric) and a friend (vampire), in the lobby. */
-function setUpRoom() {
+function setUpRoom({ latencyFrames = 0 } = {}) {
   const host = loadGame({ seed: 5 });
   const friend = loadGame({ seed: 6 });
-  const link = linkedConnections();
+  const link = linkedConnections({ latencyFrames });
   host.sr.DEBUG.god = true;
   host.sr.DEBUG.bot = true;
   host.sr.hostGame('cleric', false);
   host.sr.acceptConnection(link.hostEnd);
   friend.sr.connectToHost(link.friendEnd, 'vampire');
-  link.pump();
+  for (let i = 0; i <= latencyFrames * 2 + 1; i++) link.pump();
   return { host, friend, link };
 }
 
@@ -130,6 +140,38 @@ test('online: a friend who disconnects mid-run is dropped, and the host leaving 
   room.link.pump();
   assert.equal(room.friend.sr.scene, 'menu');
   assert.match(room.friend.sr.net.notice, /host/i);
+});
+
+test('online prediction: with 100 ms lag each way, the friend moves instantly on their screen and ends up where the host has them', () => {
+  const { host, friend, link } = setUpRoom({ latencyFrames: 6 });
+  host.sr.DEBUG.bot = false; // nobody fights, so no level-up interrupts the test
+  host.sr.startOnlineGame();
+  const friendView = () => friend.sr.run.heroes[1].player;
+  const onHost = () => host.sr.run.heroes[1].player;
+  const tick = () => { host.sr.update(FRAME); link.pump(); friend.sr.update(FRAME); link.pump(); };
+  for (let i = 0; i < 40; i++) tick(); // first snapshots arrive
+  assert.equal(friend.sr.scene, 'play');
+
+  // walk right: the friend's own screen reacts on the very first frames, the host hasn't heard yet
+  const startView = friendView().x, startHost = onHost().x;
+  friend.sr.keysDown.d = true;
+  for (let i = 0; i < 3; i++) tick();
+  assert.ok(friendView().x - startView > 5, `friend's hero should move at once (moved ${friendView().x - startView})`);
+  assert.equal(onHost().x, startHost, 'the input is still on its way to the host');
+
+  for (let i = 0; i < 90; i++) tick();
+  friend.sr.keysDown.d = false;
+  // dash: also predicted
+  const beforeDash = friendView().x;
+  friend.sr.keysPressed.space = true;
+  tick();
+  for (let i = 0; i < 4; i++) tick();
+  assert.ok(Math.abs(friendView().x - beforeDash) > 60, 'the dash shows up right away on the friend\'s screen');
+
+  for (let i = 0; i < 60; i++) tick(); // settle
+  const gap = Math.hypot(friendView().x - onHost().x, friendView().y - onHost().y);
+  assert.ok(gap < 3, `both screens agree on where the friend is (gap ${gap.toFixed(2)} px)`);
+  assert.ok(onHost().x - startHost > 200, 'and the host really moved them');
 });
 
 test('online: the room is closed to new players once the game starts', () => {
