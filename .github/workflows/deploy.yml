@@ -1,9 +1,9 @@
-# Build the game and publish it to GitHub Pages on every push to main.
+# Build the game and publish it to GitHub Pages on every push to production.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [production]
   workflow_dispatch:
 
 permissions:
