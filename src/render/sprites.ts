@@ -27,6 +27,14 @@ import vampireW from '../../assets/sprites/vampire/west.png';
 import vampireNW from '../../assets/sprites/vampire/north-west.png';
 import vampireN from '../../assets/sprites/vampire/north.png';
 import vampireNE from '../../assets/sprites/vampire/north-east.png';
+import bountyE from '../../assets/sprites/bounty_hunter/east.png';
+import bountySE from '../../assets/sprites/bounty_hunter/south-east.png';
+import bountyS from '../../assets/sprites/bounty_hunter/south.png';
+import bountySW from '../../assets/sprites/bounty_hunter/south-west.png';
+import bountyW from '../../assets/sprites/bounty_hunter/west.png';
+import bountyNW from '../../assets/sprites/bounty_hunter/north-west.png';
+import bountyN from '../../assets/sprites/bounty_hunter/north.png';
+import bountyNE from '../../assets/sprites/bounty_hunter/north-east.png';
 
 export const SPRITES_ENABLED = true;
 
@@ -71,6 +79,7 @@ interface DirectionalSet {
 const DIRECTIONAL: Record<string, DirectionalSet> = {
   traveler: { urls: [travelerE, travelerSE, travelerS, travelerSW, travelerW, travelerNW, travelerN, travelerNE], size: 48 },
   vampire: { urls: [vampireE, vampireSE, vampireS, vampireSW, vampireW, vampireNW, vampireN, vampireNE], size: 48 },
+  bounty_hunter: { urls: [bountyE, bountySE, bountyS, bountySW, bountyW, bountyNW, bountyN, bountyNE], size: 48 },
 };
 
 /** Loaded images per class (all 8 must load before the set is used). */

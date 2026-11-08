@@ -237,16 +237,16 @@ test('sprites: every class draws its own row of the hero sheet, facing and walki
   sr.render(); // starts the image loads
   counter.images.length = 0; counter.imageCalls.length = 0;
   sr.render();
-  // Traveler and Vampire have their own 8-direction sets (whole image, 5 arguments); the rest use the sheet (9)
+  // Traveler, Bounty Hunter and Vampire have their own 8-direction sets (whole image, 5 arguments); the rest use the sheet (9)
   const fromSheet = counter.images.filter((_, i) => counter.imageCalls[i].argc === 9);
-  assert.equal(counter.imageCalls.filter((c) => c.argc === 5).length, 2, 'Traveler and Vampire draw from their 8-direction sets');
+  assert.equal(counter.imageCalls.filter((c) => c.argc === 5).length, 3, 'Traveler, Bounty Hunter and Vampire draw from their 8-direction sets');
   const rows = fromSheet.map(([sx, sy]) => [sx / 32, sy / 32]);
-  assert.equal(rows.length, CLASS_IDS.length - 2, 'one sheet sprite per other hero');
-  assert.deepEqual(rows.map(([, row]) => row).sort(), [1, 2, 3, 5], 'each other class uses its own row');
+  assert.equal(rows.length, CLASS_IDS.length - 3, 'one sheet sprite per other hero');
+  assert.deepEqual(rows.map(([, row]) => row).sort(), [1, 3, 5], 'each other class uses its own row');
   for (const [col] of rows) assert.ok(col >= 0 && col <= 10 && Number.isInteger(col), `valid frame column ${col}`);
 });
 
-for (const classId of ['traveler', 'vampire']) test(`sprites: the ${classId} turns through 8 different images as it aims around`, () => {
+for (const classId of ['traveler', 'bounty_hunter', 'vampire']) test(`sprites: the ${classId} turns through 8 different images as it aims around`, () => {
   const { sr, counter } = loadGame({ images: true });
   sr.newRun(classId);
   const p = sr.run.player;
