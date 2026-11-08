@@ -14,7 +14,7 @@ function stubContext(counter) {
     measureText: (s) => ({ width: String(s).length * 7 }),
     createLinearGradient: () => ({ addColorStop() {} }),
     createRadialGradient: () => ({ addColorStop() {} }),
-    drawImage: (...args) => { counter.drawCalls++; counter.images.push(args.slice(1, 5)); },
+    drawImage: (...args) => { counter.drawCalls++; counter.images.push(args.slice(1, 5)); counter.imageCalls.push({ img: args[0], argc: args.length }); },
   };
   return new Proxy(known, {
     get: (target, key) => (key in target ? target[key] : () => { counter.drawCalls++; }),
@@ -58,7 +58,7 @@ export function fakeStorage(data = {}) {
  * `storage` (from `fakeStorage`) gives it a localStorage; without one, progress lives in memory.
  */
 export function loadGame({ seed = 1, images = false, storage = null } = {}) {
-  const counter = { drawCalls: 0, images: [] };
+  const counter = { drawCalls: 0, images: [], imageCalls: [] };
   const canvas = { getContext: () => stubContext(counter), addEventListener() {}, style: {}, width: 0, height: 0 };
   const sandbox = {
     console,

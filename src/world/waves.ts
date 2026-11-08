@@ -32,6 +32,7 @@ function spawnWeights(wave: number): Partial<Record<EnemyTypeId, number>> {
   const tough = 1.4 + 0.2 * late;
   return {
     slime: fodder,
+    bigslime: wave >= 3 ? 0.8 : 0,
     goblin: fodder,
     bat: wave >= 2 ? 2 : 0,
     archer: wave >= 4 ? 2 : 0,

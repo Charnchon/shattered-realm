@@ -18,7 +18,7 @@ import { net } from '../net/session';
 import { offerFadeIn } from '../game/controls';
 import { drawScoreboard, groupDigits, liveScore, scoreboardHeight } from './scoreboard';
 import { drawClassLevel, drawClassLevelBadge, drawRewards, goldText } from './rewards';
-import { drawButton, drawDashedRect, drawDiamond, drawPanel, drawPixelText, drawText, drawWrappedText } from './primitives';
+import { drawButton, drawCenteredLabel, drawDashedRect, drawDiamond, drawPanel, drawPixelText, drawText, drawWrappedText } from './primitives';
 
 const OVERLAY = 'rgba(10,7,14,0.78)';
 
@@ -51,8 +51,10 @@ export function drawLevelUp(): void {
   drawSlotStrip();
   const reroll = rerollButtonRect(), canUse = canReroll();
   drawPanel(reroll.x, reroll.y, reroll.w, reroll.h, canUse && mouseIn(reroll) ? COLOR.panelHover : COLOR.panel, canUse ? COLOR.gold : COLOR.line, 2);
-  drawPixelText(rerollLabel(), reroll.x + reroll.w / 2, reroll.y + 22, 14, canUse ? COLOR.gold : COLOR.dim, 'center');
-  drawText('Click a card or press 1, 2, 3', VIEW_W / 2, 510, 13, COLOR.dim, 'center');
+  drawCenteredLabel(rerollLabel(), reroll, 14, canUse ? COLOR.gold : COLOR.dim);
+  // on a dark plate, so it reads cleanly over the ability bar underneath
+  drawPanel(VIEW_W / 2 - 120, 494, 240, 24, COLOR.bg, COLOR.line, 1);
+  drawText('Click a card or press 1, 2, 3', VIEW_W / 2, 511, 13, COLOR.muted, 'center');
 }
 
 /** Co-op: you've chosen, the game resumes once everyone has. */
@@ -217,8 +219,8 @@ export function drawMenu(): void {
   CLASS_ORDER.forEach((id, i) => drawClassTile(CLASSES[id], rects[i], i, menuSelection === i));
   drawClassDetail(CLASSES[CLASS_ORDER[menuSelection]]);
   const online = menuOnlineButtons();
-  drawButton(online.host, 'Create room · C', COLOR.teal, COLOR.teal, 21);
-  drawButton(online.join, 'Join room · J', COLOR.gold, COLOR.gold, 21);
+  drawButton(online.host, 'Create room · C', COLOR.teal, COLOR.teal);
+  drawButton(online.join, 'Join room · J', COLOR.gold, COLOR.gold);
   drawBountyStrip(458);
   // a notice (e.g. "not enough gold") takes the controls line's place
   if (net.notice) drawText(net.notice, VIEW_W / 2, 508, 13, COLOR.ember, 'center');
@@ -277,9 +279,9 @@ export function drawLobby(): void {
   }
 
   const b = lobbyButtons();
-  drawButton(b.leave, 'Leave · Esc', COLOR.ember, COLOR.ember, 27);
-  drawButton(b.copy, 'Copy invite link', COLOR.teal, COLOR.teal, 27);
-  if (host) drawButton(b.start, 'Start · Enter', COLOR.gold, COLOR.gold, 27);
+  drawButton(b.leave, 'Leave · Esc', COLOR.ember, COLOR.ember);
+  drawButton(b.copy, 'Copy invite link', COLOR.teal, COLOR.teal);
+  if (host) drawButton(b.start, 'Start · Enter', COLOR.gold, COLOR.gold);
   else drawText('The host starts the game', b.start.x + b.start.w / 2, b.start.y + 26, 12, COLOR.dim, 'center');
   if (net.status) drawText(net.status, VIEW_W / 2, 420, 13, COLOR.gold, 'center');
   drawText('Co-op: XP is shared, everyone picks their own cards. Stand next to a downed friend to revive them.', VIEW_W / 2, 512, 12, COLOR.dim, 'center');
@@ -306,9 +308,9 @@ export function drawJoin(): void {
   }
   if (net.status) drawText(net.status, VIEW_W / 2, 314, 14, connecting ? COLOR.teal : COLOR.ember, 'center');
   const b = joinButtons();
-  drawButton(b.back, 'Back · Esc', COLOR.frame, COLOR.text, 27);
+  drawButton(b.back, 'Back · Esc', COLOR.frame, COLOR.text);
   const ready = !connecting && net.joinText.length === 5;
-  drawButton(b.join, connecting ? 'Connecting…' : 'Join · Enter', ready ? COLOR.gold : COLOR.line, ready ? COLOR.gold : COLOR.dim, 27);
+  drawButton(b.join, connecting ? 'Connecting…' : 'Join · Enter', ready ? COLOR.gold : COLOR.line, ready ? COLOR.gold : COLOR.dim);
   drawText('You\'ll play as ' + CLASSES[CLASS_ORDER[menuSelection]].name + '. You can change class in the room.', VIEW_W / 2, 440, 12, COLOR.dim, 'center');
 }
 
@@ -378,7 +380,7 @@ function drawClassDetail(cls: ClassDef): void {
   }
   if (locked) {
     const price = classPrice(cls.id);
-    if (price) drawButton(buyClassRect(), 'Unlock · ' + price + ' gold · U', getProgress().gold >= price ? COLOR.gold : COLOR.frame, undefined, 23);
+    if (price) drawButton(buyClassRect(), 'Unlock · ' + price + ' gold · U', getProgress().gold >= price ? COLOR.gold : COLOR.frame);
     drawPadlock(x + 34, y + h - 24, COLOR.gold);
     drawPixelText('How to unlock: ' + unlockText(cls.id), x + 52, y + h - 18, 14, COLOR.gold);
   } else {
@@ -488,11 +490,11 @@ export function drawResult(): void {
   const b = resultButtons();
   if (net.mode === 'client') {
     drawText('Waiting for the host…', b.again.x + b.again.w / 2, b.again.y + 25, 13, COLOR.dim, 'center');
-    drawButton(b.menu, 'Leave · Esc', COLOR.frame, COLOR.text, 26);
+    drawButton(b.menu, 'Leave · Esc', COLOR.frame, COLOR.text);
     return;
   }
-  drawButton(b.again, 'Play again · Enter', COLOR.teal, COLOR.teal, 26);
-  drawButton(b.menu, net.mode === 'host' ? 'Back to room · Esc' : 'Change class · Esc', COLOR.frame, COLOR.text, 26);
+  drawButton(b.again, 'Play again · Enter', COLOR.teal, COLOR.teal);
+  drawButton(b.menu, net.mode === 'host' ? 'Back to room · Esc' : 'Change class · Esc', COLOR.frame, COLOR.text);
 }
 
 // ------------------------------------------------------------ high scores (menu panel)
@@ -503,7 +505,7 @@ export const setHighScoresOpen = (open: boolean): void => { highScoresOpen = ope
 
 /** The best runs on this browser. */
 function drawHighScores(): void {
-  const list = getProgress().highScores, w = 620, h = 70 + 30 * Math.max(1, list.length), x = VIEW_W / 2 - w / 2, y = Math.max(40, VIEW_H / 2 - h / 2);
+  const list = getProgress().highScores, w = 620, h = 96 + 30 * Math.max(1, list.length), x = VIEW_W / 2 - w / 2, y = Math.max(40, VIEW_H / 2 - h / 2);
   ctx.fillStyle = 'rgba(10,7,14,0.85)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   drawPanel(x, y, w, h, COLOR.panel, COLOR.gold, 2);
@@ -519,5 +521,5 @@ function drawHighScores(): void {
     drawText((e.players > 1 ? e.players + 'P' : 'Solo') + ' · ' + mapDef(e.mapId ?? 'forest').name.split(' ').pop() + ' ' + (e.mapLevel ?? 1), x + 470, ry, 12, COLOR.muted);
     drawText(e.date, x + w - 20, ry, 12, COLOR.dim, 'right');
   });
-  drawText('H or Esc to close', VIEW_W / 2, y + h + 22, 12, COLOR.dim, 'center');
+  drawText('H or Esc to close', VIEW_W / 2, y + h - 14, 12, COLOR.dim, 'center');
 }

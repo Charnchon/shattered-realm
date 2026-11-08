@@ -14,15 +14,18 @@ import { drawPanel, drawPixelText, drawText } from './primitives';
 export const liveScore = (): number =>
   runScore({ wavesCleared: run.wavesCleared, bossesKilled: run.bossesKilled, kills: run.kills, win: !!run.result?.win, mapId: run.mapId, mapLevel: run.mapLevel });
 
-/** Columns: header, x offset from the panel's left, and how to read a hero. */
+/**
+ * Columns: header, x from the panel's left, and how to read a hero. The two name columns are
+ * left-aligned at x; the number columns are centred on x, header and values alike.
+ */
 const SCORE_COLUMNS: { label: string; x: number; value: (h: Hero) => string }[] = [
   { label: 'Player', x: 34, value: (h) => h.name },
   { label: 'Class', x: 190, value: (h) => h.cls.name },
-  { label: 'Lv', x: 330, value: (h) => String(h.player.level) },
-  { label: 'Kills', x: 400, value: (h) => groupDigits(h.score.kills) },
-  { label: 'Damage', x: 480, value: (h) => shortNumber(h.score.damage) },
-  { label: 'Taken', x: 560, value: (h) => shortNumber(h.score.taken) },
-  { label: 'Revives', x: 640, value: (h) => String(h.score.revives) },
+  { label: 'Lv', x: 318, value: (h) => String(h.player.level) },
+  { label: 'Kills', x: 388, value: (h) => groupDigits(h.score.kills) },
+  { label: 'Damage', x: 466, value: (h) => shortNumber(h.score.damage) },
+  { label: 'Taken', x: 546, value: (h) => shortNumber(h.score.taken) },
+  { label: 'Revives', x: 624, value: (h) => String(h.score.revives) },
 ];
 const SCORE_PANEL_W = 680;
 /** Row height: shorter with 3-4 players, so the result screen fits. */
@@ -35,16 +38,16 @@ export const scoreboardHeight = (): number => 40 + rowH() * run.heroes.length;
 export function drawScoreboard(y: number, accent: string): void {
   const heroes = run.heroes, x = VIEW_W / 2 - SCORE_PANEL_W / 2;
   drawPanel(x, y, SCORE_PANEL_W, scoreboardHeight(), COLOR.panel, COLOR.line, 2, accent);
-  SCORE_COLUMNS.forEach((c, i) => drawText(c.label, x + c.x, y + 26, 12, COLOR.dim, i < 2 ? 'left' : 'right'));
+  SCORE_COLUMNS.forEach((c, i) => drawText(c.label, x + c.x, y + 26, 12, COLOR.dim, i < 2 ? 'left' : 'center'));
   const top = heroes.length > 1 ? heroes.reduce((a, b) => (b.score.damage > a.score.damage ? b : a)) : null;
   heroes.forEach((h, row) => {
-    const ry = y + 40 + row * rowH();
+    const ry = y + 40 + row * rowH(), base = ry + rowH() / 2 + 5; // text baseline, centred in the row
     if (h === localHero()) { ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x + 6, ry + 2, SCORE_PANEL_W - 12, rowH() - 4); }
-    if (h === top) drawText('★', x + 16, ry + 21, 13, COLOR.gold, 'center');
+    if (h === top) drawText('★', x + 16, base, 13, COLOR.gold, 'center');
     const color = h.gone ? COLOR.dim : h.down ? COLOR.red : COLOR.text;
     SCORE_COLUMNS.forEach((c, i) => {
-      if (i < 2) drawText(c.value(h) + (i === 0 && h.down ? ' · down' : ''), x + c.x, ry + 21, 14, color);
-      else drawPixelText(c.value(h), x + c.x, ry + 21, 15, color, 'right');
+      if (i < 2) drawText(c.value(h) + (i === 0 && h.down ? ' · down' : ''), x + c.x, base, 14, color);
+      else drawPixelText(c.value(h), x + c.x, base, 15, color, 'center');
     });
   });
 }

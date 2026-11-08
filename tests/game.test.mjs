@@ -120,23 +120,33 @@ test('sprites: every class draws its own row of the hero sheet, facing and walki
   // face each hero a different way, and make half of them walk
   const faces = [Math.PI / 2, -Math.PI / 2, 0, Math.PI, Math.PI / 2, 0];
   heroes.forEach((h, i) => { h.player.face = faces[i]; h.player.moveX = i % 2; });
-  counter.images.length = 0;
+  sr.render(); // starts the image loads
+  counter.images.length = 0; counter.imageCalls.length = 0;
   sr.render();
-  const rows = counter.images.map(([sx, sy]) => [sx / 32, sy / 32]);
-  assert.equal(rows.length, CLASS_IDS.length, 'one sprite per hero');
-  assert.deepEqual(rows.map(([, row]) => row).sort(), [0, 1, 2, 3, 4, 5], 'each class uses its own row');
+  // Traveler and Vampire have their own 8-direction sets (whole image, 5 arguments); the rest use the sheet (9)
+  const fromSheet = counter.images.filter((_, i) => counter.imageCalls[i].argc === 9);
+  assert.equal(counter.imageCalls.filter((c) => c.argc === 5).length, 2, 'Traveler and Vampire draw from their 8-direction sets');
+  const rows = fromSheet.map(([sx, sy]) => [sx / 32, sy / 32]);
+  assert.equal(rows.length, CLASS_IDS.length - 2, 'one sheet sprite per other hero');
+  assert.deepEqual(rows.map(([, row]) => row).sort(), [1, 2, 3, 5], 'each other class uses its own row');
   for (const [col] of rows) assert.ok(col >= 0 && col <= 10 && Number.isInteger(col), `valid frame column ${col}`);
-  // the Vampire's sheet has no column 8: its side walk must skip it
-  const vampire = heroes.find((h) => h.classId === 'vampire');
-  vampire.player.face = 0;
-  vampire.player.moveX = 1;
-  for (let t = 0; t < 2; t += 0.05) {
-    sr.run.time = t;
-    counter.images.length = 0;
+});
+
+for (const classId of ['traveler', 'vampire']) test(`sprites: the ${classId} turns through 8 different images as it aims around`, () => {
+  const { sr, counter } = loadGame({ images: true });
+  sr.newRun(classId);
+  const p = sr.run.player;
+  sr.render(); // starts the image loads
+  const seen = new Set();
+  for (let i = 0; i < 8; i++) {
+    p.face = (i * Math.PI) / 4;
+    counter.imageCalls.length = 0;
     sr.render();
-    const vampireFrame = counter.images.find(([, sy]) => sy / 32 === 4);
-    assert.notEqual(vampireFrame[0] / 32, 8, 'never draws the missing Vampire frame');
+    const call = counter.imageCalls.find((c) => c.argc === 5);
+    assert.ok(call, 'drawn from the 8-direction set');
+    seen.add(call.img);
   }
+  assert.equal(seen.size, 8, 'a different image for each of the 8 directions');
 });
 
 test('sprites: without images (or switched off) heroes fall back to circles', () => {
@@ -493,6 +503,23 @@ test('toads lob poison at where the hero stood: a circle first, then a pool', ()
   assert.ok(sr.run.zones.some((z) => z.owner === 'enemy' && z.kind === 'pool' && Math.hypot(z.x - at.x, z.y - at.y) < 1), 'a poison pool lands there');
 });
 
+test('attack cues: a monster that hits you lunges and claws, hostile ground and shots are marked, and joiners see it', () => {
+  const { sr } = quietArena();
+  const p = sr.run.player;
+  const goblin = sr.spawnEnemy('goblin', p.x + 40, p.y, false);
+  for (let i = 0; i < 60 && !goblin.strikeTime; i++) sr.step(1 / 60);
+  assert.ok(goblin.strikeTime > 0, 'the goblin that touched the hero is mid-lunge');
+  assert.ok(Math.abs(Math.cos(goblin.face) + 1) < 0.2, 'it lunges at the hero (to its left)');
+  assert.ok(sr.run.fx.some((f) => f.kind === 'slash' && Math.hypot(f.x - goblin.x, f.y - goblin.y) < 60), 'a claw slash comes from the attacker');
+  const toad = sr.spawnEnemy('toad', p.x + 320, p.y, false);
+  toad.attackTimer = 0.05;
+  stepFor(sr, 1.3, () => { goblin.contactCooldown = 0; });
+  const snap = JSON.parse(sr.encodeSnapshot(sr.run, 'play'));
+  assert.ok(snap.zones.some((z) => z[8] === 1), 'the poison pool is sent as hostile ground');
+  assert.ok(snap.mobs.some((m) => m[0] === goblin.id && m[6] & 256), 'the lunge reaches joined players');
+  sr.render(); // hostile edges, lunges and halos draw without errors
+});
+
 test('wraiths turn ethereal (immune, harmless) and back', () => {
   const { sr } = quietArena();
   const p = sr.run.player;
@@ -627,4 +654,24 @@ test('run counters: interrupts, dazed hits, imp chain kills, shield breaks and a
   archer.attackTimer = 0.05;
   for (let i = 0; i < 120 && t.arrowHits === 0; i++) { p.iframes = 0; sr.step(1 / 60); }
   assert.equal(t.arrowHits, 1);
+});
+
+test('slimes come in three sizes: a Big Slime splits into two Slimes; Slimes split into small ones from wave 4', () => {
+  const { sr } = quietArena('traveler');
+  const p = sr.run.player;
+  const big = sr.spawnEnemy('bigslime', p.x + 300, p.y, false);
+  const mid = sr.spawnEnemy('slime', p.x - 300, p.y, false);
+  const small = sr.spawnEnemy('mini', p.x, p.y + 300, false);
+  assert.ok(big.r > mid.r && mid.r > small.r, `sizes: big ${big.r} > slime ${mid.r} > small ${small.r}`);
+  assert.equal(mid.r, 15, 'the normal slime is bigger than before (was 11)');
+  const slimes = () => sr.run.enemies.filter((e) => e.type === 'slime' && !e.dead).length;
+  const before = slimes();
+  sr.hitEnemy(big, 1e9);
+  assert.equal(slimes(), before + 2, 'a Big Slime always splits into two Slimes');
+  const minis = () => sr.run.enemies.filter((e) => e.type === 'mini' && !e.dead).length;
+  const m0 = minis();
+  sr.hitEnemy(mid, 1e9);
+  assert.equal(minis(), m0, 'on wave 1 a Slime does not split yet');
+  assert.equal(sr.run.hero.tally.killsByType.slime, 2, 'every size counts as a slime (Slayer, bestiary)');
+  sr.render();
 });

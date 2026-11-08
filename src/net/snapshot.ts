@@ -9,7 +9,7 @@ import type {
 } from '../types';
 import { CLASSES } from '../classes/registry';
 import { createRunShell, emptyInput } from '../game/run';
-import { ENEMY_TYPES } from '../world/enemies';
+import { ENEMY_TYPES, STRIKE_TIME } from '../world/enemies';
 
 const TYPE_IDS = Object.keys(ENEMY_TYPES) as EnemyTypeId[];
 const ZONE_KINDS: Zone['kind'][] = ['pool', 'net', 'smoke', 'spikes', 'fire', 'light', 'holyfire', 'ring', 'trap', 'mine'];
@@ -20,11 +20,11 @@ const MAX_ZONES = 160;
 
 /** [id, type, x, y, face, hpFrac, flags, r] */
 type PackedMob = [number, number, number, number, number, number, number, number];
-const FLAG = { elite: 1, flash: 2, charm: 4, root: 8, shieldBroken: 16, toughBar: 32, phased: 64, dazed: 128 } as const;
-/** [x, y, vx, vy, r, color, kind] */
-type PackedShot = [number, number, number, number, number, string, string];
-/** [kind, x, y, r, life, color, currentR, t] */
-type PackedZone = [number, number, number, number, number, string, number, number];
+const FLAG = { elite: 1, flash: 2, charm: 4, root: 8, shieldBroken: 16, toughBar: 32, phased: 64, dazed: 128, strike: 256, windup: 512 } as const;
+/** [x, y, vx, vy, r, color, kind, hostile (1/0)] */
+type PackedShot = [number, number, number, number, number, string, string, number];
+/** [kind, x, y, r, life, color, currentR, t, hostile (1/0)] */
+type PackedZone = [number, number, number, number, number, string, number, number, number];
 
 export interface HeroSnap {
   idx: number;
@@ -108,13 +108,15 @@ function packMob(e: Mob): PackedMob {
   if (e.maxHp > 30) flags |= FLAG.toughBar;
   if (e.phased) flags |= FLAG.phased;
   if ((e.dazedTime ?? 0) > 0) flags |= FLAG.dazed;
+  if (e.strikeTime) flags |= FLAG.strike;
+  if (e.windup) flags |= FLAG.windup;
   return [e.id, TYPE_IDS.indexOf(e.type), r1(e.x), r1(e.y), e.face, e.hp / e.maxHp, flags, e.r];
 }
 
-const packShot = (s: Shot): PackedShot => [r1(s.x), r1(s.y), r1(s.vx), r1(s.vy), s.r, s.color || '', s.kind || ''];
+const packShot = (s: Shot): PackedShot => [r1(s.x), r1(s.y), r1(s.vx), r1(s.vy), s.r, s.color || '', s.kind || '', s.owner === 'enemy' ? 1 : 0];
 
 function packZone(z: Zone): PackedZone {
-  return [ZONE_KINDS.indexOf(z.kind), r1(z.x), r1(z.y), z.r, z.life, z.color || '', z.kind === 'ring' ? z.currentR : 0, z.t];
+  return [ZONE_KINDS.indexOf(z.kind), r1(z.x), r1(z.y), z.r, z.life, z.color || '', z.kind === 'ring' ? z.currentR : 0, z.t, z.owner === 'enemy' ? 1 : 0];
 }
 
 /** Effects not sent yet, newest kept when there are too many. */
@@ -180,6 +182,8 @@ function unpackMob(m: PackedMob): Mob {
     shieldBroken: !!(flags & FLAG.shieldBroken),
     phased: !!(flags & FLAG.phased),
     dazedTime: flags & FLAG.dazed ? 1 : 0,
+    strikeTime: flags & FLAG.strike ? STRIKE_TIME / 2 : 0, // mid-lunge: the furthest point
+    windup: flags & FLAG.windup ? 1 : 0,
     hasShield: !!ENEMY_TYPES[type].shield,
     boss: false, dead: false, undead: false, speed: 0, damage: 0, xp: 0, contactCooldown: 0,
     knockX: 0, knockY: 0, attackTimer: 0, wobble: 0,
@@ -188,16 +192,18 @@ function unpackMob(m: PackedMob): Mob {
 }
 
 function unpackShot(s: PackedShot): Shot {
-  const [x, y, vx, vy, r, color, kind] = s;
+  const [x, y, vx, vy, r, color, kind, hostile] = s;
+  // drawn only; a player shot's hero / pierce / hit set don't matter on a joined screen
+  if (!hostile) return { owner: 'player', hero: 0, hitSet: new Set(), pierce: 0, x, y, vx, vy, r, dmg: 0, life: 1, color: color || undefined, kind: kind || undefined };
   return { owner: 'enemy', x, y, vx, vy, r, dmg: 0, life: 1, color: color || undefined, kind: kind || undefined };
 }
 
 function unpackZone(z: PackedZone): Zone {
-  const [kindIdx, x, y, r, life, color, currentR, t] = z;
+  const [kindIdx, x, y, r, life, color, currentR, t, hostile] = z;
   const kind = ZONE_KINDS[kindIdx] ?? 'pool';
   return {
     kind, x, y, r, life, t, color: color || undefined, currentR, max: life,
-    owner: 'player', hero: 0, tick: 1, tickTimer: 0,
+    owner: hostile ? 'enemy' : 'player', hero: 0, tick: 1, tickTimer: 0,
     startR: 0, endR: 0, dur: 1, dmg: 0, delay: 0, root: 0,
   } as Zone;
 }

@@ -79,11 +79,11 @@ export function drawCodex(classId: string): void {
   drawText('Bestiary ' + seen + '/' + BESTIARY.length + '  ·  Cards found ' + p.codex.cards.length + '  ·  Evolutions ' + p.codex.evolved.length,
     PANEL.x + PANEL.w - 24, PANEL.y + 32, 13, COLOR.muted, 'right');
   const tabs = codexTabRects();
-  drawButton(tabs.bestiary, 'Bestiary · 1', codexTab === 'bestiary' ? COLOR.gold : COLOR.frame, undefined, 21);
-  drawButton(tabs.cards, 'Cards · 2', codexTab === 'cards' ? COLOR.gold : COLOR.frame, undefined, 21);
+  drawButton(tabs.bestiary, 'Bestiary · 1', codexTab === 'bestiary' ? COLOR.gold : COLOR.frame);
+  drawButton(tabs.cards, 'Cards · 2', codexTab === 'cards' ? COLOR.gold : COLOR.frame);
   if (codexTab === 'bestiary') drawBestiary();
   else drawCards(classId);
-  drawButton(codexCloseRect(), 'Close · B', COLOR.frame, COLOR.text, 20);
+  drawButton(codexCloseRect(), 'Close · B', COLOR.frame, COLOR.text);
 }
 
 /** 15 monsters, 3 columns: kills, Slayer tier, and what you've learned about them. */

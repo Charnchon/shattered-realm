@@ -104,7 +104,7 @@ export function killEnemy(e: Enemy, opts: HitOptions = {}): void {
   cancelWindup(e); // a dead archer/healer/imp's warning disappears with it
   const def = ENEMY_TYPES[e.type];
   if (def.bomber) blowUpImp(e);
-  if (def.splitInto && run.wave >= 4) {
+  if (def.splitInto && run.wave >= (def.splitFromWave ?? 4)) {
     for (let i = 0; i < 2; i++) spawnEnemy(def.splitInto, e.x + randRange(-8, 8), e.y + randRange(-8, 8), false);
   }
   if (run.cls.onKill) run.cls.onKill(e, opts);
@@ -125,9 +125,9 @@ function blowUpImp(e: Mob): void {
 
 /**
  * The key a kill counts under for Slayer and the bestiary: the enemy type, or the boss kind.
- * Split slimes count as slimes.
+ * Every slime size counts as a slime.
  */
-export const monsterKey = (e: Enemy): string => (e.boss ? e.kind : e.type === 'mini' ? 'slime' : e.type);
+export const monsterKey = (e: Enemy): string => (e.boss ? e.kind : e.type === 'mini' || e.type === 'bigslime' ? 'slime' : e.type);
 
 /** +1% damage per Slayer tier the current hero has against this monster. */
 const slayerMul = (e: Enemy): number => 1 + 0.01 * (run.hero.slayer?.[monsterKey(e)] ?? 0);

@@ -95,16 +95,16 @@ export function drawMapPanel(classId: string): void {
 
   // the level picker and what the chosen level adds
   const def = mapDef(sel.mapId), mp = mapProgress(sel.mapId), arrows = levelArrowRects();
-  drawButton(arrows.down, '◀', sel.level > 1 ? COLOR.teal : COLOR.frame, undefined, 23);
+  drawButton(arrows.down, '◀', sel.level > 1 ? COLOR.teal : COLOR.frame);
   drawPixelText('Level ' + sel.level, PANEL.x + 120, PANEL.y + 386, 20, COLOR.text, 'center');
-  drawButton(arrows.up, '▶', sel.level < mp.level ? COLOR.teal : COLOR.frame, undefined, 23);
+  drawButton(arrows.up, '▶', sel.level < mp.level ? COLOR.teal : COLOR.frame);
   drawText(def.name + ': levels 1–' + mp.level + ' unlocked (win a level to open the next) · rewards ×' + mapRewardMul(sel.mapId, sel.level).toFixed(2),
     PANEL.x + 232, PANEL.y + 377, 12, COLOR.muted);
   const adds = LEVEL_LADDER.slice(1, sel.level).map((s) => s.text);
   drawText(adds.length ? 'This level adds: ' + adds.join(' · ') : 'Level 1: the normal map', PANEL.x + 232, PANEL.y + 395, 11, adds.length ? COLOR.ember : COLOR.dim);
   drawText('Click a map or press 1–' + MAPS.length + ' · ◀ ▶ (or ← →) change the level · U unlocks the highlighted map with gold',
     PANEL.x + 24, PANEL.y + PANEL.h - 24, 12, COLOR.dim);
-  drawButton(mapCloseRect(), 'Done · M', COLOR.teal, COLOR.teal, 22);
+  drawButton(mapCloseRect(), 'Done · M', COLOR.teal, COLOR.teal);
 }
 
 function drawMapRow(i: number, row: Rect, classId: string, selectedId: string): void {
@@ -118,7 +118,7 @@ function drawMapRow(i: number, row: Rect, classId: string, selectedId: string): 
   if (!open) {
     const price = def.price, afford = getProgress().gold >= price;
     drawText(mapUnlockText(def.id), row.x + 380, row.y + 21, 11, COLOR.gold);
-    drawButton(mapBuyRect(row), 'Unlock · ' + price + 'g · U', afford ? COLOR.gold : COLOR.frame, undefined, 21);
+    drawButton(mapBuyRect(row), 'Unlock · ' + price + 'g · U', afford ? COLOR.gold : COLOR.frame);
     return;
   }
   const best = mp.won ? 'Won up to level ' + mp.won : mp.bestWave ? 'Best wave ' + mp.bestWave : 'Not played yet';

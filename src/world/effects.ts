@@ -16,8 +16,8 @@ export function spawnBurst(x: number, y: number, color: string, count: number, s
   }
 }
 
-export function spawnSlash(x: number, y: number, face: number, r: number, arc: number, color: string, width?: number): void {
-  run.fx.push({ kind: 'slash', x, y, face, r, arc, color, life: 0.14, max: 0.14, w: width || 4 });
+export function spawnSlash(x: number, y: number, face: number, r: number, arc: number, color: string, width?: number, life = 0.14): void {
+  run.fx.push({ kind: 'slash', x, y, face, r, arc, color, life, max: life, w: width || 4 });
 }
 
 export function spawnRing(x: number, y: number, r: number, color: string): void {

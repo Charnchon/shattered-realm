@@ -7,6 +7,7 @@ import { diamondPath, drawBar, drawPixelText } from './primitives';
 import { drawHeroSprite } from './sprites';
 import { drawDarkness, drawHazards } from './mapscreen';
 import { mapDef } from '../world/maps';
+import { HOSTILE_RED, STRIKE_TIME } from '../world/enemies';
 
 const GROUND_TILE = 64;
 
@@ -127,9 +128,47 @@ function drawZones(): void {
     } else {
       ctx.fillStyle = z.color || 'rgba(255,255,255,0.15)';
       ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
+      if (z.owner === 'enemy') drawHostileEdge(z.x, z.y, z.r);
+      else drawFriendlyEdge(z.x, z.y, z.r);
     }
     ctx.globalAlpha = 1;
   }
+}
+
+/**
+ * Ground that hurts heroes: a red tint and a pulsing, crawling red dashed border with warning
+ * notches, so a green poison pool never reads as a heal. Friendly ground keeps a calm, thin edge.
+ */
+function drawHostileEdge(x: number, y: number, r: number): void {
+  const fade = ctx.globalAlpha, pulse = 0.65 + 0.35 * Math.sin(run.time * 8);
+  ctx.fillStyle = 'rgba(255,60,40,0.1)';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  ctx.globalAlpha = fade * pulse;
+  ctx.strokeStyle = HOSTILE_RED;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8, 6]);
+  ctx.lineDashOffset = -run.time * 24;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineDashOffset = 0;
+  // inward-pointing notches around the edge: "keep out"
+  ctx.fillStyle = HOSTILE_RED;
+  const n = Math.max(4, Math.round(r / 12));
+  for (let i = 0; i < n; i++) {
+    const a = (i * TAU) / n + run.time * 0.4, c = Math.cos(a), s = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(x + c * (r - 7), y + s * (r - 7));
+    ctx.lineTo(x + c * r - s * 4, y + s * r + c * 4);
+    ctx.lineTo(x + c * r + s * 4, y + s * r - c * 4);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = fade;
+}
+
+function drawFriendlyEdge(x: number, y: number, r: number): void {
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke();
 }
 
 /** Outline plus a fill that grows as the attack approaches. */
@@ -193,6 +232,14 @@ function drawPickups(): void {
 
 function drawShots(): void {
   for (const s of run.shots) {
+    if (s.owner === 'enemy') {
+      // a red halo marks shots that hurt you
+      ctx.strokeStyle = HOSTILE_RED;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r + 4, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     ctx.fillStyle = s.color || '#fff';
     if (s.kind === 'bolt' || s.kind === 'heavybolt') {
       ctx.save();
@@ -343,17 +390,23 @@ function drawShadow(x: number, y: number, rx: number, ry: number, alpha: number)
 
 type ShapeDrawer = (e: Mob, r: number, col: string, flashing: boolean) => void;
 
-function drawSlime(_e: Mob, r: number): void {
-  ctx.beginPath(); ctx.ellipse(0, 2, r, r * 0.8, 0, 0, TAU); ctx.fill();
+/** Slimes of every size: a wobbling blob whose eyes and shine grow with it. */
+function drawSlime(e: Mob, r: number): void {
+  const squish = 1 + 0.06 * Math.sin(run.time * 5 + e.wobble);
+  ctx.beginPath(); ctx.ellipse(0, 2, r * squish, r * 0.8 / squish, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; // shine
+  ctx.beginPath(); ctx.ellipse(-r * 0.35, -r * 0.3, r * 0.22, r * 0.14, -0.5, 0, TAU); ctx.fill();
+  const eye = Math.max(2, r * 0.16);
   ctx.fillStyle = COLOR.ink;
-  ctx.fillRect(-r * 0.4, -r * 0.1, 2, 3);
-  ctx.fillRect(r * 0.25, -r * 0.1, 2, 3);
+  ctx.fillRect(-r * 0.4, -r * 0.1, eye, eye * 1.4);
+  ctx.fillRect(r * 0.25, -r * 0.1, eye, eye * 1.4);
 }
 
 /** Shape per enemy type, drawn centred at the origin. `col` already accounts for hit flash. */
 const ENEMY_SHAPES: Record<EnemyTypeId, ShapeDrawer> = {
   slime: drawSlime,
   mini: drawSlime,
+  bigslime: drawSlime,
   goblin(e, r) {
     ctx.rotate(e.face);
     ctx.beginPath(); ctx.moveTo(r + 3, 0); ctx.lineTo(-r, -r * 0.85); ctx.lineTo(-r * 0.6, 0); ctx.lineTo(-r, r * 0.85); ctx.closePath(); ctx.fill();
@@ -424,6 +477,32 @@ const ENEMY_SHAPES: Record<EnemyTypeId, ShapeDrawer> = {
   },
 };
 
+/**
+ * Who is attacking: a monster that just hit a hero lunges toward them inside a red glow (the
+ * translate stays on for its body), and one winding up an attack (archer aiming, boar about to
+ * charge, imp fuse, healer channelling) gets a pulsing red ring and a "!" above its head.
+ */
+function drawAttackCues(e: Mob): void {
+  const r = e.r;
+  if (e.windup) {
+    const pulse = 0.5 + 0.5 * Math.sin(run.time * 14);
+    ctx.globalAlpha = 0.5 + 0.5 * pulse;
+    ctx.strokeStyle = HOSTILE_RED;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r + 5 + 2 * pulse, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+    drawPixelText('!', 0, -r - 18, 14, HOSTILE_RED, 'center');
+  }
+  if (e.strikeTime) {
+    const k = e.strikeTime / STRIKE_TIME, reach = Math.sin(k * Math.PI) * r * 0.45;
+    ctx.translate(Math.cos(e.face) * reach, Math.sin(e.face) * reach);
+    ctx.globalAlpha = 0.35 + 0.4 * k;
+    ctx.fillStyle = HOSTILE_RED;
+    ctx.beginPath(); ctx.arc(0, 0, r + 5, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
 /** Little stars circling a dazed enemy's head. */
 function drawDazedStars(r: number): void {
   ctx.fillStyle = COLOR.gold;
@@ -438,6 +517,7 @@ function drawEnemy(e: Enemy): void {
   ctx.save();
   ctx.translate(e.x, e.y);
   drawShadow(0, r * 0.9, r * 0.9, r * 0.3, 0.3);
+  if (!e.boss) drawAttackCues(e);
   if (e.elite) { ctx.strokeStyle = COLOR.gold; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, TAU); ctx.stroke(); }
   if (e.charmTime > 0) { ctx.strokeStyle = '#ff7ad0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, r + 6, 0, TAU); ctx.stroke(); }
   if (e.rootTime > 0) { ctx.strokeStyle = COLOR.gold; ctx.lineWidth = 2; ctx.strokeRect(-r - 3, r - 2, r * 2 + 6, 4); }

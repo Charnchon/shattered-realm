@@ -5,7 +5,7 @@ import { angleDiff, clamp, randRange } from '../core/math';
 import { asHero, nearestHero, partyScale, run } from '../core/state';
 import { updateBoss } from './bosses';
 import { hitEnemy, hurtHero } from './combat';
-import { addFloatingText, addTelegraph, schedule, spawnBurst } from './effects';
+import { addFloatingText, addTelegraph, schedule, spawnBurst, spawnSlash } from './effects';
 import { addZone } from './zones';
 import { currentMods } from './maps';
 import { fireEnemyShot } from './projectiles';
@@ -43,8 +43,9 @@ export interface EnemyTypeDef {
   turnRate?: number;
   /** Lights a fuse near a hero (blast circle shown), then explodes. Killed first, it blows up its neighbours instead. */
   bomber?: boolean;
-  /** Spawns two of this type on death (from wave 4). */
+  /** Spawns two of this type on death, from wave `splitFromWave` (default 4). */
   splitInto?: EnemyTypeId;
+  splitFromWave?: number;
 }
 
 /**
@@ -53,11 +54,12 @@ export interface EnemyTypeDef {
  * mowing a horde: kill the healer first, step off the archer's line, pop imps from range, flank the orc.
  */
 export const ENEMY_TYPES: Record<EnemyTypeId, EnemyTypeDef> = {
+  // the slime family, three sizes: Big Slime -> 2 Slimes -> (from wave 4) 2 small slimes each
   slime: {
     name: 'Slime', role: 'Fodder that splits in two (from wave 4)', weakness: 'Area attacks clear the splits',
-    hp: 26, speed: 48, r: 11, damage: 8, xp: 2, color: '#6fbf5a', splitInto: 'mini',
+    hp: 26, speed: 48, r: 15, damage: 8, xp: 2, color: '#6fbf5a', splitInto: 'mini',
   },
-  mini: { name: 'Slime', role: 'Split from a slime', weakness: 'Fragile', hp: 9, speed: 60, r: 7, damage: 4, xp: 1, color: '#9ad884' },
+  mini: { name: 'Slime', role: 'Split from a slime', weakness: 'Fragile', hp: 9, speed: 60, r: 9, damage: 4, xp: 1, color: '#9ad884' },
   goblin: { name: 'Goblin', role: 'Fast rusher', weakness: 'Fragile: one or two hits', hp: 18, speed: 96, r: 9, damage: 7, xp: 2, color: '#c9a24a' },
   bat: {
     name: 'Bat', role: 'Erratic flanker, sometimes in a flock', weakness: 'Very fragile; holy damage', hp: 10, speed: 112, r: 7, damage: 5, xp: 1,
@@ -102,6 +104,10 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyTypeDef> = {
     name: 'Grave Caller', role: 'Summoner: channels a purple circle, then raises three bats', weakness: 'Kill it first; any hit interrupts the summon',
     hp: 30, speed: 40, r: 11, damage: 6, xp: 7, color: '#6a4a8a', undead: true, maxAlive: 1,
     summon: { interval: 6, channel: 1.2, type: 'bat', count: 3 },
+  },
+  bigslime: {
+    name: 'Big Slime', role: 'Big and slow; splits into two Slimes', weakness: 'Area attacks; finish the splits before they spread',
+    hp: 70, speed: 36, r: 23, damage: 12, xp: 4, color: '#4f9e44', splitInto: 'slime', splitFromWave: 1, maxAlive: 3,
   },
 };
 
@@ -205,6 +211,7 @@ export function updateEnemies(dt: number): void {
     if (e.dead) continue;
     e.flash -= dt;
     e.contactCooldown -= dt;
+    if (!e.boss && e.strikeTime) e.strikeTime = Math.max(0, e.strikeTime - dt);
     if (e.bleedTime > 0) {
       e.bleedTime -= dt;
       asHero(e.bleedOwner, () => hitEnemy(e, e.bleedDps * dt, { dot: true, silent: true }));
@@ -280,8 +287,25 @@ function updateEnemy(e: Mob, dt: number): void {
   }
   if (distToPlayer < e.r + p.r && e.contactCooldown <= 0 && !e.phased) {
     e.contactCooldown = 0.7;
-    hurtHero(targetHero, e.damage);
+    strikeHero(e, targetHero, e.damage);
   }
+}
+
+/** How long a monster's attack lunge lasts (see `Mob.strikeTime`). */
+export const STRIKE_TIME = 0.22;
+/** Colour of everything that hurts the heroes: monster attacks, hostile warnings and ground. */
+export const HOSTILE_RED = '#ff5a3c';
+
+/**
+ * A monster hits a hero in melee. Besides the damage, the attacker turns to the hero, lunges and
+ * claws toward them, so in a crowd the player can see exactly which monster hurt them.
+ */
+function strikeHero(e: Mob, h: Hero, damage: number): void {
+  const p = h.player, a = Math.atan2(p.y - e.y, p.x - e.x);
+  e.face = a;
+  e.strikeTime = STRIKE_TIME;
+  spawnSlash(e.x, e.y, a, e.r + 7, 1.7, HOSTILE_RED, 4, STRIKE_TIME);
+  hurtHero(h, damage);
 }
 
 /** Rotate `face` toward `target`, at most `turnRate` rad/s (instantly if undefined). */
@@ -299,7 +323,6 @@ const ARCHER_RANGE = 420;
 const IMP_TRIGGER = 60;
 const IMP_FUSE = 0.6;
 export const IMP_BLAST = 56;
-const HOSTILE_RED = '#ff5a3c';
 
 /** Start a telegraphed action: `seconds` of warning shown by `spec` (online clients draw it too). */
 function startWindup(e: Mob, seconds: number, spec: TelegraphSpec): void {
@@ -427,7 +450,7 @@ function updateCharger(e: Mob, c: NonNullable<EnemyTypeDef['charge']>, target: H
       const p = h.player;
       if (!h.down && !h.gone && e.contactCooldown <= 0 && Math.hypot(p.x - e.x, p.y - e.y) < e.r + p.r) {
         e.contactCooldown = 0.7;
-        hurtHero(h, e.damage * 1.5);
+        strikeHero(e, h, e.damage * 1.5);
       }
     }
     if (e.chargeTime <= 0 || e.x <= 12 || e.y <= 12 || e.x >= ARENA_W - 12 || e.y >= ARENA_H - 12) {

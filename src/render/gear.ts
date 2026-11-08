@@ -50,7 +50,7 @@ export function drawGearPanel(): void {
 
   gearRowRects().forEach((row, i) => drawGearRow(ACCESSORIES[i], row, i));
   drawText('Click an accessory (or press its number) to wear or remove it', PANEL.x + 24, PANEL.y + PANEL.h - 22, 12, COLOR.dim);
-  drawButton(gearCloseRect(), 'Close · E', COLOR.frame, COLOR.text, 21);
+  drawButton(gearCloseRect(), 'Close · E', COLOR.frame, COLOR.text);
 }
 
 function drawGearRow(def: AccessoryDef, row: Rect, index: number): void {
@@ -71,5 +71,5 @@ function drawGearRow(def: AccessoryDef, row: Rect, index: number): void {
   const cost = upgradeCost(def, level), btn = gearUpgradeRect(row);
   if (level >= maxLevelOf(def)) { drawText('Max level', btn.x + btn.w / 2, btn.y + 19, 11, COLOR.dim, 'center'); return; }
   const afford = p.gold >= cost;
-  drawButton(btn, 'Upgrade · ' + groupDigits(cost) + 'g', afford ? COLOR.gold : COLOR.frame, afford ? COLOR.gold : COLOR.dim, 18);
+  drawButton(btn, 'Upgrade · ' + groupDigits(cost) + 'g', afford ? COLOR.gold : COLOR.frame, afford ? COLOR.gold : COLOR.dim);
 }

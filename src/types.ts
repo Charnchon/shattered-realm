@@ -69,7 +69,7 @@ export interface Stats {
 
 // ------------------------------------------------------------ enemies
 
-export type EnemyTypeId = 'slime' | 'mini' | 'goblin' | 'bat' | 'archer' | 'cultist' | 'orc' | 'imp' | 'boar' | 'toad' | 'wraith' | 'caller';
+export type EnemyTypeId = 'slime' | 'mini' | 'goblin' | 'bat' | 'archer' | 'cultist' | 'orc' | 'imp' | 'boar' | 'toad' | 'wraith' | 'caller' | 'bigslime';
 export type BossKind = 'troll' | 'colossus' | 'wyvern' | 'king';
 
 export interface StatusTimers {
@@ -135,6 +135,11 @@ export interface Mob extends EnemyBase {
   /** Wraith: ethereal (can't be hurt, can't hurt) while true; `phaseTimer` counts down to the next switch. */
   phased?: boolean;
   phaseTimer?: number;
+  /**
+   * Seconds left of the attack animation after this enemy hits a hero: it lunges along `face` and
+   * glows red, so the player can see which monster hurt them.
+   */
+  strikeTime?: number;
 }
 
 export type BossState = 'chase' | 'aim' | 'charge' | 'recover' | 'slam' | 'breath' | 'dive' | 'land' | 'slash';

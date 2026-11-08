@@ -93,7 +93,18 @@ export function drawDashedRect(x: number, y: number, w: number, h: number, dash:
 }
 
 /** Button: panel that lights up on hover, with a centred label. */
-export function drawButton(rect: Rect, label: string, color: string, labelColor: string = color, labelOffsetY = 26): void {
+export function drawButton(rect: Rect, label: string, color: string, labelColor: string = color): void {
   drawPanel(rect.x, rect.y, rect.w, rect.h, mouseIn(rect) ? COLOR.panelHover : COLOR.panel, color, 2);
-  drawPixelText(label, rect.x + rect.w / 2, rect.y + labelOffsetY, 16, labelColor, 'center');
+  drawCenteredLabel(label, rect, 16, labelColor);
+}
+
+/**
+ * Pixel text centred in `rect` both ways. The baseline comes from the label's measured ink
+ * (ascent and descent), so every button lines up without hand-tuned offsets.
+ */
+export function drawCenteredLabel(label: string, rect: Rect, size: number, color: string): void {
+  drawPixelText('', 0, 0, size, color); // sets the font that drawPixelText will use, for measuring
+  const m = ctx.measureText(label);
+  const ascent = m.actualBoundingBoxAscent ?? size * 0.7, descent = m.actualBoundingBoxDescent ?? 0;
+  drawPixelText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + (ascent - descent) / 2, size, color, 'center');
 }

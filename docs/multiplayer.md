@@ -62,6 +62,8 @@ several inputs arrive between host frames.
   `classState` goes through a JSON replacer: numbers rounded to 2 decimals, functions dropped, `Set`s sent as a marker
   and revived as empty `Set`s (class drawing code expects them to exist).
 - Busy lists packed into arrays: mobs `[id, type, x, y, face, hpFrac, flags, r]`, shots, zones, gems, coins.
+  Shots and zones end with a hostile flag (1 = hurts heroes) and mob flags include `strike` / `windup`, so a
+  joined player sees the same attack cues (red ground edges, lunges, "!" markers) as the host.
   Bosses are sent whole (few fields, needed for the boss bar and AI-driven drawing).
 - Particles and floating texts: **only new ones** (a `WeakSet` remembers what was sent; capped per snapshot). Clients
   age them locally with `ageVisualEffects`.

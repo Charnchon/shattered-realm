@@ -5,6 +5,7 @@ import { randRange } from '../core/math';
 import { livingHeroes, run } from '../core/state';
 import { hurtHeroOverTime } from './combat';
 import { addTelegraph, spawnBurst } from './effects';
+import { HOSTILE_RED } from './enemies';
 import { mapDef } from './maps';
 import { addZone } from './zones';
 
@@ -62,7 +63,7 @@ function updateMushroom(hz: Hazard, dt: number): void {
     if (!livingHeroes().some((h) => Math.hypot(h.player.x - hz.x, h.player.y - hz.y) < MUSHROOM_TRIGGER)) return;
     hz.state = 'fuse';
     hz.timer = MUSHROOM_FUSE;
-    addTelegraph({ kind: 'circle', x: hz.x, y: hz.y, r: hz.r, dur: MUSHROOM_FUSE, color: '#7ad06a' });
+    addTelegraph({ kind: 'circle', x: hz.x, y: hz.y, r: hz.r, dur: MUSHROOM_FUSE, color: HOSTILE_RED });
     return;
   }
   hz.timer -= dt;

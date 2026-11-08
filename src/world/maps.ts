@@ -43,7 +43,7 @@ export const MAPS: MapDef[] = [
   {
     id: 'grotto', name: 'Fungal Grotto', stars: 3, rewardMul: 1.3, price: 800, modifier: 'Mushrooms burst into poison when you get close. More toads and slimes',
     ground: { fill: '#121a14', grid: '#1a241c', decor: ['#20321f', '#2c2240'] }, mushrooms: 16,
-    spawnMul: { toad: 2, slime: 1.5 },
+    spawnMul: { toad: 2, slime: 1.5, bigslime: 2 },
   },
   {
     id: 'ember', name: 'Ember Wastes', stars: 3, rewardMul: 1.4, price: 1200, modifier: 'Lava cracks burn you. More imps and boars',
