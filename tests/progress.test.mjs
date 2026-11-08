@@ -27,8 +27,9 @@ test('rewards: every run pays gold and class EXP by the formulas, co-op adds 10%
   assert.equal(r.saved, true);
   const p = sr.progress.getProgress();
   assert.equal(p.gold, 150);
-  assert.equal(p.classes.cleric.exp, 190);
-  assert.deepEqual({ ...sr.progress.specialistLevel(190) }, { level: 2, into: 90, need: 200 }, 'one level-up after the first run');
+  assert.equal(p.classes.cleric.exp, 190 + 300, 'the run EXP plus the first-boss-as-Cleric milestone');
+  assert.equal(r.bonusExp, 300);
+  assert.deepEqual({ ...sr.progress.specialistLevel(190) }, { level: 2, into: 90, need: 200 }, 'one level-up from a first run alone');
 
   const coop = finishRun(sr, 'oathknight', { coop: true });
   assert.equal(coop.gold, Math.round(150 * 1.1), 'co-op bonus');
@@ -126,7 +127,7 @@ test('saves: export and import move a save between browsers; garbage is refused'
   assert.equal(other.progress.getProgress().gold, 0, 'a refused import changes nothing');
   assert.equal(other.progress.importSave(text), true);
   assert.equal(other.progress.getProgress().gold, 150);
-  assert.equal(other.progress.getProgress().classes.cleric.exp, 190);
+  assert.equal(other.progress.getProgress().classes.cleric.exp, 490);
 });
 
 // ------------------------------------------------------------ step B: accessories (final-boss loot), loadout, gold
@@ -162,7 +163,8 @@ test('loot: a duplicate levels the accessory up; at max level it turns into gold
   const goldBefore = sr.progress.getProgress().gold;
   const r = finishRun(sr, 'cleric', { waves: 12, bosses: 4, win: true });
   assert.ok(r.loot.gold > 0, 'a duplicate at max level becomes gold');
-  assert.equal(sr.progress.getProgress().gold, goldBefore + r.gold + r.loot.gold);
+  const goalGold = r.completions.reduce((n, c) => n + (c.gold || 0), 0); // first-win milestones etc.
+  assert.equal(sr.progress.getProgress().gold, goldBefore + r.gold + r.loot.gold + goalGold);
 });
 
 test('loadout: worn accessories change the hero\'s stats; at most 3; only owned ones', () => {
@@ -216,4 +218,98 @@ test('accessories panel: E opens it, a click wears an accessory, and it never st
   sr.update(1 / 60);
   assert.equal(sr.scene, 'play', 'closed: the menu works again');
   assert.equal(sr.run.hero.accessories[0].id, 'titan_belt', 'the run wears the loadout');
+});
+
+// ------------------------------------------------------------ steps C and D: bounties, milestones, Slayer, Codex
+
+/** End a real run as `classId` after setting the local hero's run counters. */
+function finishWithTally(sr, classId, tally = {}, opts = {}) {
+  sr.DEBUG.god = false;
+  sr.DEBUG.bot = false;
+  sr.newRun(classId);
+  Object.assign(sr.run.hero.tally, tally);
+  sr.run.wavesCleared = opts.waves ?? 2;
+  sr.run.bossesKilled = opts.bosses ?? 0;
+  if (opts.cards) for (const [id, evolved] of opts.cards) sr.run.hero.cards[id] = { level: 1, evolved, upgrades: { damage: 0, heal: 0, range: 0, speed: 0, duration: 0, effect: 0, projectiles: 0 } };
+  sr.endRunForTest(!!opts.win);
+  return sr.progress.lastRewards;
+}
+
+test('bounties: 3 are always active in table order; progress adds up across runs; a finished one pays and is replaced', () => {
+  const { sr } = loadGame();
+  const p = () => sr.progress.getProgress();
+  assert.deepEqual([...p().bounties.active], ['interrupt', 'dazed', 'imp_chain'], 'a new save starts with the first 3');
+  finishWithTally(sr, 'cleric', { dazedHits: 3, interrupts: 2 });
+  assert.equal(p().bounties.progress.dazed, 3);
+  const r = finishWithTally(sr, 'cleric', { dazedHits: 2, interrupts: 1 });
+  const bounty = r.completions.find((c) => c.kind === 'bounty');
+  assert.ok(bounty && /dazed/i.test(bounty.text), 'the dazed bounty is finished across two runs');
+  assert.deepEqual([...p().bounties.active], ['interrupt', 'imp_chain', 'shields'], 'replaced right away by the next in the table');
+  assert.equal(p().bounties.progress.interrupt, 3, 'others keep their progress');
+  assert.equal(p().bounties.done, 1);
+  sr.newRun('cleric'); sr.DEBUG.god = true; sr.endRunForTest(false); // (test mode: no bounty progress)
+  assert.equal(p().bounties.progress.interrupt, 3);
+});
+
+test('milestones: one-off rewards, never paid twice', () => {
+  const { sr } = loadGame();
+  const r = finishWithTally(sr, 'cleric', {}, { waves: 3, bosses: 1 });
+  const m = r.completions.find((c) => c.kind === 'milestone');
+  assert.ok(m && m.exp === 300 && /Cleric/.test(m.text), 'first boss as the Cleric: +300 Cleric EXP');
+  assert.equal(sr.progress.getProgress().classes.cleric.exp, r.exp + 300);
+  const again = finishWithTally(sr, 'cleric', {}, { waves: 3, bosses: 1 });
+  assert.ok(!again.completions.some((c) => c.kind === 'milestone' && /First boss/.test(c.text)), 'not twice');
+  const other = finishWithTally(sr, 'oathknight', {}, { waves: 3, bosses: 1 });
+  assert.ok(other.completions.some((c) => /Oathknight/.test(c.text)), 'each class has its own');
+});
+
+test('Slayer: kills add up across runs; each tier is +1% damage against that monster (max +5%)', () => {
+  const { sr } = loadGame();
+  finishWithTally(sr, 'cleric', { killsByType: { cultist: 20, slime: 5 } });
+  assert.equal(sr.progress.slayerTiers().cultist, undefined, '20 cultist kills: no tier yet');
+  const r = finishWithTally(sr, 'cleric', { killsByType: { cultist: 5 } });
+  assert.deepEqual(JSON.parse(JSON.stringify(r.completions.find((c) => c.kind === 'slayer'))), { kind: 'slayer', monster: 'cultist', tier: 1 });
+  assert.equal(sr.progress.getProgress().kills.cultist, 25);
+
+  // the next run carries the tier: +1% damage to cultists only
+  sr.DEBUG.god = true;
+  sr.newRun('cleric');
+  assert.equal(sr.run.hero.slayer.cultist, 1);
+  const p = sr.run.player;
+  const a = sr.spawnEnemy('cultist', p.x + 300, p.y, false), b = sr.spawnEnemy('cultist', p.x - 300, p.y, false);
+  const withTier = sr.hitEnemy(a, 5, { noCrit: true });
+  sr.run.hero.slayer = {};
+  const ratio = withTier / sr.hitEnemy(b, 5, { noCrit: true });
+  assert.ok(Math.abs(ratio - 1.01) < 1e-9, `+1% against cultists (got ${ratio})`);
+
+  finishWithTally(sr, 'cleric', { killsByType: { cultist: 5000, troll: 50 } });
+  assert.equal(sr.progress.slayerTiers().cultist, 5, 'capped at Slayer V');
+  assert.equal(sr.progress.slayerTiers().troll, 5, 'bosses use their own, smaller thresholds');
+});
+
+test('Codex: cards held at the end of a run and evolutions are recorded per class', () => {
+  const { sr } = loadGame();
+  finishWithTally(sr, 'cleric', {}, { cards: [['devout', false], ['holy_orbs', true]] });
+  const codex = sr.progress.getProgress().codex;
+  assert.ok(codex.cards.includes('cleric:devout') && codex.cards.includes('cleric:holy_orbs'));
+  assert.deepEqual([...codex.evolved], ['cleric:holy_orbs']);
+});
+
+test('Codex panel: B opens it, 2 shows cards, and it never starts a run', () => {
+  const { sr } = loadGame();
+  finishWithTally(sr, 'cleric', { killsByType: { slime: 30, troll: 1 } });
+  sr.scene = 'menu';
+  sr.render(); // the bounty strip on class select
+  sr.keysPressed.b = true;
+  sr.update(1 / 60);
+  sr.render(); // bestiary
+  sr.keysPressed['2'] = true;
+  sr.update(1 / 60);
+  sr.render(); // cards
+  assert.equal(sr.scene, 'menu', 'the number key switched tabs instead of starting a run');
+  sr.keysPressed.b = true;
+  sr.update(1 / 60);
+  sr.keysPressed['2'] = true;
+  sr.update(1 / 60);
+  assert.equal(sr.scene, 'play', 'closed: the menu works again');
 });

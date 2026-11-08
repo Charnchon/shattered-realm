@@ -257,3 +257,42 @@ test('online: a friend brings their own accessories; the host checks them', () =
   ], 'levels clamped, duplicates and unknown ids dropped, at most 3');
   assert.equal(host.sr.run.heroes[0].accessories.length, 0, 'the host wears nothing');
 });
+
+test('online: Slayer tiers travel with a friend; the host cleans them', () => {
+  const host = loadGame({ seed: 5 });
+  const link = linkedConnections();
+  host.sr.DEBUG.god = true;
+  host.sr.hostGame('cleric', false);
+  host.sr.acceptConnection(link.hostEnd);
+  link.friendEnd.send(JSON.stringify({ t: 'hello', classId: 'vampire', slayer: { cultist: 3, troll: 99, dragon: 5, slime: 'x' } }));
+  link.pump();
+  host.sr.startOnlineGame();
+  assert.deepEqual(JSON.parse(JSON.stringify(host.sr.run.heroes[1].slayer)), { cultist: 3, troll: 5 }, 'unknown monsters dropped, tiers capped at 5');
+  assert.match(host.sr.encodeSnapshot(host.sr.run, 'play'), /"tally":\{"killsByType"/, 'run counters reach the friend (who saves their own)');
+});
+
+test('online: the host\'s map and level reach the friend (lobby, world, hazards) and count in the friend\'s save', () => {
+  const host = loadGame({ seed: 5 });
+  const friend = loadGame({ seed: 6 });
+  host.sr.progress.importSave(JSON.stringify({ version: 2, maps: { grotto: { open: true, level: 2 } }, selected: { mapId: 'grotto', level: 2 } }));
+  const link = linkedConnections();
+  host.sr.DEBUG.god = true;
+  host.sr.hostGame('cleric', false);
+  host.sr.acceptConnection(link.hostEnd);
+  friend.sr.connectToHost(link.friendEnd, 'vampire');
+  link.pump(); link.pump();
+  assert.deepEqual({ ...friend.sr.net.map }, { mapId: 'grotto', level: 2 }, 'the lobby shows the host\'s pick');
+  friend.sr.render();
+  host.sr.startOnlineGame();
+  const tick = () => { link.pump(); host.sr.update(FRAME); link.pump(); friend.sr.update(FRAME); };
+  for (let i = 0; i < 30; i++) tick();
+  assert.equal(friend.sr.run.mapId, 'grotto');
+  assert.equal(friend.sr.run.mapLevel, 2);
+  assert.equal(friend.sr.run.hazards.length, host.sr.run.hazards.length, 'the mushrooms are on the friend\'s screen too');
+  friend.sr.render();
+  host.sr.run.wavesCleared = 5;
+  host.sr.endRunForTest(false);
+  for (let i = 0; i < 6; i++) tick();
+  assert.equal(friend.sr.progress.mapProgress('grotto').bestWave, 6, 'the friend\'s own save records the map');
+  assert.ok(friend.sr.progress.isMapOpen('ember'), 'reaching wave 6 opens the next map for the friend too');
+});

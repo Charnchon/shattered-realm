@@ -7,6 +7,7 @@ import { hurtHero, hurtPlayer } from './combat';
 import { addFloatingText, addTelegraph, schedule, spawnBurst, spawnSlash } from './effects';
 import { createStatusTimers, spawnEnemy } from './enemies';
 import { BOSS_HEAL_ORB, BOSS_HEAL_ORBS, dropCoin, dropGem } from './pickups';
+import { currentMods } from './maps';
 import { fireEnemyShot } from './projectiles';
 import { completeWave } from './waves';
 import { addZone } from './zones';
@@ -45,7 +46,7 @@ export function spawnBoss(wave: number): void {
   const def = BOSS_DEFS[wave], a = randRange(0, TAU), p = living.length ? randPick(living).player : run.player;
   const x = clamp(p.x + Math.cos(a) * 380, 80, ARENA_W - 80);
   const y = clamp(p.y + Math.sin(a) * 380, 80, ARENA_H - 80);
-  const hp = def.hp * partyScale(0.7);
+  const hp = def.hp * partyScale(0.7) * currentMods().bossHp;
   const e: Boss = {
     id: run.nextId++,
     type: 'boss', kind: def.kind, name: def.name, x, y, r: def.r,
@@ -72,7 +73,7 @@ export function onBossDefeated(e: Boss): void {
   run.safeZone = null;
   const gemValue = 6 * (1 + 0.3 * (run.wave - 1));
   for (let i = 0; i < 14; i++) dropGem(e.x + randRange(-50, 50), e.y + randRange(-50, 50), gemValue, true);
-  for (let i = 0; i < BOSS_HEAL_ORBS; i++) dropCoin(e.x + randRange(-40, 40), e.y + randRange(-40, 40), BOSS_HEAL_ORB, 'heal');
+  for (let i = 0; i < BOSS_HEAL_ORBS; i++) dropCoin(e.x + randRange(-40, 40), e.y + randRange(-40, 40), BOSS_HEAL_ORB * currentMods().healOrbMul, 'heal');
   spawnBurst(e.x, e.y, e.color, 40, 240);
   run.shake = 10;
   if (e.unlocksCardSlot) {

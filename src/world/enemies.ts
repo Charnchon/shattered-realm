@@ -7,6 +7,7 @@ import { updateBoss } from './bosses';
 import { hitEnemy, hurtHero } from './combat';
 import { addFloatingText, addTelegraph, schedule, spawnBurst } from './effects';
 import { addZone } from './zones';
+import { currentMods } from './maps';
 import { fireEnemyShot } from './projectiles';
 
 export interface EnemyTypeDef {
@@ -113,7 +114,8 @@ export function createStatusTimers(): StatusTimers {
 
 export function spawnEnemy(type: EnemyTypeId, x: number, y: number, elite: boolean): Mob {
   const def = ENEMY_TYPES[type], wave = Math.max(1, run.wave);
-  const hpMul = (1 + 0.24 * (wave - 1)) * partyScale(0.5), damageMul = 1 + 0.1 * (wave - 1);
+  const mods = currentMods(); // map level: tougher, harder-hitting, faster enemies
+  const hpMul = (1 + 0.24 * (wave - 1)) * partyScale(0.5) * mods.enemyHp, damageMul = (1 + 0.1 * (wave - 1)) * mods.enemyDamage;
   const hp = def.hp * hpMul * (elite ? ELITE.hp : 1);
   const target = nearestHero(x, y)?.player ?? run.player;
   const e: Mob = {
@@ -122,7 +124,7 @@ export function spawnEnemy(type: EnemyTypeId, x: number, y: number, elite: boole
     r: def.r * (elite ? ELITE.size : 1),
     hp,
     maxHp: hp,
-    speed: def.speed * (elite ? ELITE.speed : 1) * randRange(0.92, 1.08),
+    speed: def.speed * (elite ? ELITE.speed : 1) * randRange(0.92, 1.08) * mods.enemySpeed,
     damage: def.damage * damageMul * (elite ? ELITE.damage : 1),
     xp: def.xp * (elite ? ELITE.xp : 1),
     elite: !!elite, undead: !!def.undead, hasShield: !!def.shield, color: def.color,
@@ -346,6 +348,8 @@ function updateChannel(e: Mob, interval: number, time: number, spec: TelegraphSp
     if (e.hp < (e.windHp ?? e.hp)) {
       cancelWindup(e);
       e.attackTimer = interval;
+      const by = e.lastHitBy !== undefined ? run.heroes[e.lastHitBy] : undefined;
+      if (by) by.tally.interrupts++;
       addFloatingText(e.x, e.y - e.r - 8, 'interrupted', COLOR.gold, 11);
       return false;
     }
@@ -366,12 +370,13 @@ function updateChannel(e: Mob, interval: number, time: number, spec: TelegraphSp
 /** Healer: channel inside a green circle, then heal every enemy in it. Any damage interrupts. Returns true while channelling. */
 function updateHealer(e: Mob, heal: NonNullable<EnemyTypeDef['healer']>, dt: number): boolean {
   const inCircle = (): Enemy[] => enemiesInRadius(e.x, e.y, heal.radius).filter((o) => o !== e && !o.boss && o.hp < o.maxHp);
-  return updateChannel(e, heal.interval, heal.channel,
-    { kind: 'circle', x: e.x, y: e.y, r: heal.radius, dur: heal.channel, color: COLOR.green },
+  const mods = currentMods(), channel = heal.channel * mods.channelMul;
+  return updateChannel(e, heal.interval, channel,
+    { kind: 'circle', x: e.x, y: e.y, r: heal.radius, dur: channel, color: COLOR.green },
     () => inCircle().length > 0,
     () => {
       for (const o of inCircle()) {
-        o.hp = Math.min(o.maxHp, o.hp + o.maxHp * heal.percent);
+        o.hp = Math.min(o.maxHp, o.hp + o.maxHp * heal.percent * mods.healMul);
         spawnBurst(o.x, o.y, COLOR.green, 5, 60);
       }
       spawnBurst(e.x, e.y, COLOR.green, 12, 120);
@@ -380,8 +385,9 @@ function updateHealer(e: Mob, heal: NonNullable<EnemyTypeDef['healer']>, dt: num
 
 /** Summoner: channel inside a purple circle, then raise minions around itself. Any damage interrupts. */
 function updateSummoner(e: Mob, sum: NonNullable<EnemyTypeDef['summon']>, dt: number): boolean {
-  return updateChannel(e, sum.interval, sum.channel,
-    { kind: 'circle', x: e.x, y: e.y, r: SUMMON_RADIUS, dur: sum.channel, color: '#b07ae0' },
+  const channel = sum.channel * currentMods().channelMul;
+  return updateChannel(e, sum.interval, channel,
+    { kind: 'circle', x: e.x, y: e.y, r: SUMMON_RADIUS, dur: channel, color: '#b07ae0' },
     () => true,
     () => {
       for (let i = 0; i < sum.count; i++) {

@@ -5,17 +5,19 @@ import { ARENA_H, ARENA_W, COLOR, TAU, VIEW_H, VIEW_W } from '../core/constants'
 import { run, withHero } from '../core/state';
 import { diamondPath, drawBar, drawPixelText } from './primitives';
 import { drawHeroSprite } from './sprites';
+import { drawDarkness, drawHazards } from './mapscreen';
+import { mapDef } from '../world/maps';
 
 const GROUND_TILE = 64;
 
 /** Static ground speckles, scattered once at load. */
-const GROUND_DECOR: { x: number; y: number; s: number; c: string }[] = [];
+const GROUND_DECOR: { x: number; y: number; s: number; c: 0 | 1 }[] = [];
 for (let i = 0; i < 420; i++) {
   GROUND_DECOR.push({
     x: Math.random() * ARENA_W,
     y: Math.random() * ARENA_H,
     s: Math.random() < 0.8 ? 2 : 4,
-    c: Math.random() < 0.5 ? '#231b2e' : '#1f2a26',
+    c: Math.random() < 0.5 ? 0 : 1, // which of the map's two decor colours
   });
 }
 
@@ -54,6 +56,12 @@ export function drawWorld(): void {
   }
   drawShots();
   drawEffects();
+  if (drawDarkness()) {
+    // in the dark, warnings, shots and your teammates must still show
+    drawTelegraphs();
+    drawShots();
+    for (const h of run.heroes) if (!h.gone && h.idx !== run.localHero) withHero(h, drawPlayer);
+  }
   drawFloatingTexts();
   ctx.restore();
 }
@@ -64,11 +72,11 @@ function isOnScreen(x: number, y: number, margin: number): boolean {
 }
 
 function drawGround(): void {
-  const cam = run.camera;
-  ctx.fillStyle = '#17121e';
+  const cam = run.camera, look = mapDef(run.mapId).ground;
+  ctx.fillStyle = look.fill;
   ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   // grid lines, only the visible ones
-  ctx.strokeStyle = '#1f1828';
+  ctx.strokeStyle = look.grid;
   ctx.lineWidth = 1;
   const x0 = Math.floor(cam.x / GROUND_TILE) * GROUND_TILE, y0 = Math.floor(cam.y / GROUND_TILE) * GROUND_TILE;
   ctx.beginPath();
@@ -77,13 +85,14 @@ function drawGround(): void {
   ctx.stroke();
   for (const d of GROUND_DECOR) {
     if (!isOnScreen(d.x, d.y, 10)) continue;
-    ctx.fillStyle = d.c;
+    ctx.fillStyle = look.decor[d.c];
     ctx.fillRect(d.x, d.y, d.s, d.s);
   }
   // arena border
   ctx.strokeStyle = COLOR.frame;
   ctx.lineWidth = 4;
   ctx.strokeRect(-2, -2, ARENA_W + 4, ARENA_H + 4);
+  drawHazards(isOnScreen);
 }
 
 /** Final boss phase: everything outside the safe circle is tinted and hurts. */

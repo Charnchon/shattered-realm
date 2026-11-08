@@ -126,6 +126,8 @@ export interface Mob extends EnemyBase {
   windAngle?: number;
   /** HP when a healer started channelling: any damage after that interrupts it. */
   windHp?: number;
+  /** Index of the hero who hit it last (credit for interrupts). */
+  lastHitBy?: number;
   windTelegraph?: Telegraph;
   /** Boar: seconds left of a charge in progress, then seconds it stays dazed (and takes extra damage). */
   chargeTime?: number;
@@ -581,6 +583,38 @@ export interface Hero {
   score: HeroScore;
   /** Accessories this player brought into the run (applied in `recalcStats`). */
   accessories: EquippedAccessory[];
+  /** This player's Slayer tiers (0-5) by monster key: +1% damage per tier against that monster. */
+  slayer: Record<string, number>;
+  /** Counters for bounties, Slayer and the Codex (sent in snapshots: a joined player saves their own). */
+  tally: RunTally;
+}
+
+/** A map hazard: a mushroom that bursts into poison, or a burning lava spot. */
+export interface Hazard {
+  kind: 'mushroom' | 'lava';
+  x: number;
+  y: number;
+  r: number;
+  /** Mushrooms: seconds left of the fuse, or until it regrows. */
+  timer: number;
+  state: 'ready' | 'fuse' | 'spent';
+}
+
+/** What one player did in a run, beyond the scoreboard. Monster keys: enemy type, or boss kind. */
+export interface RunTally {
+  killsByType: Record<string, number>;
+  eliteKills: number;
+  /** Healer heals and summons stopped by this player's hits. */
+  interrupts: number;
+  /** Hits landed on dazed boars. */
+  dazedHits: number;
+  /** Enemies killed by the blast of an imp this player killed. */
+  impChainKills: number;
+  shieldBreaks: number;
+  /** Archer arrows that hurt this player. */
+  arrowHits: number;
+  /** Times this player was knocked out (map mastery: a clear with nobody downed). */
+  downs: number;
 }
 
 /** One player's contribution to a run (end-of-run scoreboard). */
@@ -596,6 +630,11 @@ export interface HeroScore {
 
 /** Everything about the current run. */
 export interface Run {
+  /** The map and its level (1-10) for this run (see world/maps.ts). */
+  mapId: string;
+  mapLevel: number;
+  /** The map's hazards: mushrooms and lava (sent in snapshots so joined players see them). */
+  hazards: Hazard[];
   /** Every player in the run. */
   heroes: Hero[];
   /** The hero gameplay code is acting for right now (see `withHero`). Otherwise the local player. */

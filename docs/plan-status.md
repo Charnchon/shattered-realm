@@ -51,7 +51,7 @@ The plan's `CLAUDE.md` rules in section 11 (`npm run validate`, `npm run check-a
 
 | Feature | Status | Notes |
 |---|---|---|
-| Menu → class → run build → map → 12 waves → result | 🟡 | Menu → class → 12 waves → result. No run builds, no map select |
+| Menu → class → run build → map → 12 waves → result | 🟡 | Menu → class (+ map and level, M) → 12 waves → result. No run builds |
 | 12 waves, bosses on 3 / 6 / 9 / 12, wave lengths 45–75 s | ✅ | |
 | 4 bosses: Thornback Troll, Bone Colossus, Crimson Wyvern, Hollow King (3 phases, shrinking arena) | ✅ | HP raised 1.5× after playtesting (1350 / 3600 / 4800 / 9750) |
 | All 8 enemy types + elites from wave 7 | 🟡 | **Fewer, tougher enemies with one role and one weakness each** (cap 70, half the spawn rate, ~2× HP and XP; see `role`/`weakness` in `ENEMY_TYPES`). From wave 7, slimes/goblins fade out and orcs/cultists grow; elite chance rises 6% → 10% by wave 11 |
@@ -59,6 +59,10 @@ The plan's `CLAUDE.md` rules in section 11 (`npm run validate`, `npm run check-a
 | 4 new enemy types | ➕ | **Tusk Boar** (charges down a shown lane, then dazed: +50% damage taken), **Bog Toad** (lobs poison at your spot: circle, then a pool), **Wraith** (ethereal and immune 1.5 s, solid 2.5 s), **Grave Caller** (channels, then raises 3 bats; a hit interrupts). From waves 2 / 4 / 5 / 7 |
 | Cultist heals allies | ✅ | Channels a 1.2 s green circle, heals enemies inside by 35%; any hit interrupts. At most 2 alive per player |
 | Accessories | 🟡 | **Final-boss loot** (one per player who wins; the first win always drops the Shard of the Crown), **up to 3 worn per run** (E on class select), Lv 1–3: duplicates level up, gold upgrades (50% / 100% of value), a Lv 3 duplicate becomes gold. 8 of the plan's ~20 + the Shard (`src/meta/accessories.ts`). Online players bring their own (checked by the host). Plan's shop and slot prices replaced (see `progression.md` 5.0) |
+| Bounties | ➕ | 3 always active on class select, in table order (14 in `src/meta/goals.ts`), progress adds up across runs; a finished one pays gold and is replaced right away. Fed by per-player run counters (`hero.tally`) |
+| First-time milestones | ➕ | One-off gold or class EXP: first boss per class, first win (and per class), first co-op win, waves 6 and 9, first revive, Codex 50/100% |
+| Slayer achievements | ➕ | Lifetime kills per monster; Slayer I–V at 25/100/250/500/1,000 kills (bosses 1/3/5/10/20) = +1% to +5% damage against that monster. Online players bring their tiers (checked by the host) |
+| Codex | 🟡 | B on class select. Bestiary (15 monsters: name and role after 1 kill, weakness after 10, Slayer progress) and cards per class (??? until you finish a run holding it; evolutions). No lore yet |
 | Class unlocks for gold | ✅ | Vampire 500, Necromancer 800 (U on a locked class), or the milestone |
 | Live scoreboard | ➕ | The HUD shows the run score (top right); **hold Tab** for every player's level, kills, damage, damage taken and revives while the game keeps running. Works for joined players (it reads only snapshot data) |
 | End-of-run scoreboard | ➕ | Result screen shows the run score and a row per player: level, kills, damage dealt, damage taken, revives (★ = top damage in co-op). Sent in the snapshot, so joined players see it |
@@ -95,7 +99,27 @@ The class select screen is a row of 6 tiles plus a detail panel; more classes ne
 
 ## Maps (plan section 5)
 
-⬜ One plain 2400×1600 arena. No map modifiers, obstacles, palettes or reward multipliers.
+🟡 **5 of the 10 maps**, each a 2400×1600 arena with its own palette, enemy mix, reward multiplier and one modifier
+(`src/world/maps.ts`, hazards in `src/world/hazards.ts`). M on class select (or click the map badge) picks the map and level.
+
+| Map | Stars | Reward × | Modifier | Opens by |
+|---|---|---|---|---|
+| Whispering Forest | ★ | 1.0 | None | Open from the start |
+| Sunken Crypt | ★★ | 1.15 | Darkness around you (warnings, enemy shots and teammates still show); more undead | Wave 6 on the Forest, or 400 gold |
+| Fungal Grotto | ★★★ | 1.3 | Mushrooms warn, then burst into poison pools; more toads and slimes | Wave 6 on the Crypt, or 800 gold |
+| Ember Wastes | ★★★ | 1.4 | Lava cracks burn; more imps and boars | Wave 6 on the Grotto, or 1,200 gold |
+| Bloodmoon Village | ★★★★ | 1.5 | Enemies heal 1.5% HP/s; more wraiths and healers | Wave 6 on Ember, or 1,800 gold |
+
+- **Differs from the plan:** Frostpeak Pass (ice) and the other movement-changing maps (Clockwork gears, Void Rift
+  gravity) are left out for now: online movement prediction would have to copy their physics exactly. Maps unlock at
+  wave 6 *or* gold.
+- **Map levels 1–10 on every map** (`LEVEL_LADDER`): win level N to unlock N+1. Each level adds one modifier (enemy HP,
+  elites from wave 4, stronger healers, faster enemies, weaker heal orbs, more damage, more enemies, boss HP) and
+  +15% gold/EXP/score. **Differs from `progression.md` 5.3:** the plan's "shorter telegraphs", "one fewer card choice",
+  "bosses gain a new attack" and "a 4th Hollow King phase" were swapped for number-only modifiers (warnings stay
+  readable; no new boss AI yet).
+- Harder maps and levels shift loot odds toward Rare and Epic. **Mastery stars** per map per class: win · win with
+  nobody downed · win on level 5+.
 
 ## Rewards and meta progression (plan section 7)
 

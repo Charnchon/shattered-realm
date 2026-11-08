@@ -7,6 +7,9 @@ import {
   LOADOUT_SLOTS, accessoryDef, cleanLoadout, duplicateGold, maxLevelOf, rollAccessory, upgradeCost,
   type EquippedAccessory,
 } from './accessories';
+import { applyRunToGoals, cleanSlayer, fillBounties, slayerTier, type Completion } from './goals';
+import type { RunTally } from '../types';
+import { DEFAULT_MAP, MAPS, MAX_MAP_LEVEL, lootShift, mapDef, mapRewardMul, previousMap } from '../world/maps';
 
 /** Classes open from the start (phase 1 roster). */
 export const STARTER_CLASSES = ['traveler', 'oathknight', 'bounty_hunter', 'cleric'];
@@ -26,6 +29,20 @@ export interface RunRecord {
   time: number;
   /** 1 = solo, 2-4 = co-op. */
   players: number;
+  /** The class's display name (for milestone texts). */
+  className?: string;
+  /** Teammates this player revived. */
+  revives?: number;
+  /** This player's counters (kills by monster, interrupts, ...), for bounties, Slayer and the Codex. */
+  tally?: RunTally;
+  /** Card ids this player held at the end, and which of them evolved (Codex). */
+  cards?: string[];
+  evolved?: string[];
+  /** The map and level played (default: Whispering Forest, level 1). */
+  mapId?: string;
+  mapLevel?: number;
+  /** Knock-outs across the whole party (a clear with none earns a mastery star). */
+  teamDowns?: number;
 }
 
 /** One line of the high-score table. */
@@ -39,14 +56,17 @@ export interface HighScore {
   players: number;
   /** When it was played (YYYY-MM-DD). */
   date: string;
+  mapId?: string;
+  mapLevel?: number;
 }
 
 /** Entries kept in the high-score table. */
 export const HIGH_SCORE_LIMIT = 10;
 
-/** A run's score: waves and bosses matter most, kills break ties, a win is a big bonus. */
-export function runScore(r: Pick<RunRecord, 'wavesCleared' | 'bossesKilled' | 'kills' | 'win'>): number {
-  return 500 * r.wavesCleared + 2000 * r.bossesKilled + 10 * (r.kills || 0) + (r.win ? 5000 : 0);
+/** A run's score: waves and bosses matter most, kills break ties, a win is a big bonus; harder maps and levels multiply it. */
+export function runScore(r: Pick<RunRecord, 'wavesCleared' | 'bossesKilled' | 'kills' | 'win' | 'mapId' | 'mapLevel'>): number {
+  const base = 500 * r.wavesCleared + 2000 * r.bossesKilled + 10 * (r.kills || 0) + (r.win ? 5000 : 0);
+  return Math.round(base * mapRewardMul(r.mapId ?? DEFAULT_MAP, r.mapLevel ?? 1));
 }
 
 // ------------------------------------------------------------ rewards and Specialist levels
@@ -57,11 +77,12 @@ export const COOP_GOLD_BONUS = 0.1;
 export const SPECIALIST_MAX_LEVEL = 15;
 
 /** What a run pays out (docs/progression.md, section 2). Maps and map levels will multiply this later. */
-export function runRewards(r: Pick<RunRecord, 'wavesCleared' | 'bossesKilled' | 'win' | 'myKills' | 'players'>): { gold: number; exp: number } {
+export function runRewards(r: Pick<RunRecord, 'wavesCleared' | 'bossesKilled' | 'win' | 'myKills' | 'players' | 'mapId' | 'mapLevel'>): { gold: number; exp: number } {
   const kills = r.myKills || 0, coop = (r.players || 1) > 1 ? 1 + COOP_GOLD_BONUS : 1;
+  const map = mapRewardMul(r.mapId ?? DEFAULT_MAP, r.mapLevel ?? 1); // harder map and level: more of everything
   return {
-    gold: Math.round((15 * r.wavesCleared + 60 * r.bossesKilled + kills / 5 + (r.win ? 250 : 0)) * coop),
-    exp: Math.round(20 * r.wavesCleared + 80 * r.bossesKilled + kills / 5 + (r.win ? 200 : 0)),
+    gold: Math.round((15 * r.wavesCleared + 60 * r.bossesKilled + kills / 5 + (r.win ? 250 : 0)) * coop * map),
+    exp: Math.round((20 * r.wavesCleared + 80 * r.bossesKilled + kills / 5 + (r.win ? 200 : 0)) * map),
   };
 }
 
@@ -91,6 +112,12 @@ export interface RunRewards {
   saved: boolean;
   /** The final boss's drop (wins only). */
   loot: LootResult | null;
+  /** Bounties, milestones and Slayer tiers finished this run. */
+  completions: Completion[];
+  /** Class EXP from milestones, on top of `exp` (the reel's EXP bar includes it). */
+  bonusExp: number;
+  /** Map news from this run: "Sunken Crypt opened", "Level 3 unlocked", mastery stars. */
+  mapNews: string[];
 }
 
 /** What the final boss dropped for this player. */
@@ -146,11 +173,37 @@ export interface Progress {
   accessories: Record<string, number>;
   /** Ids of the accessories equipped for the next run (at most `LOADOUT_SLOTS`). */
   loadout: string[];
+  /** Active bounties with their progress, the rotation position, and how many were finished. */
+  bounties: { active: string[]; progress: Record<string, number>; next: number; done: number };
+  /** One-off milestones already rewarded. */
+  milestones: string[];
+  /** Lifetime kills by monster key (Slayer achievements and the bestiary). */
+  kills: Record<string, number>;
+  /** Cards held at the end of a run ("classId:cardId"), and evolutions made. */
+  codex: { cards: string[]; evolved: string[] };
+  /** Per map: open, highest level unlocked and won, best wave. The first map is always open. */
+  maps: Record<string, MapProgress>;
+  /** Mastery per "mapId:classId": bit 1 = cleared, 2 = cleared with nobody downed, 4 = cleared on level 5+. */
+  mastery: Record<string, number>;
+  /** The map and level picked on class select for the next run. */
+  selected: { mapId: string; level: number };
+}
+
+export interface MapProgress {
+  open: boolean;
+  /** Highest level you may pick (win level N to unlock N + 1). */
+  level: number;
+  /** Highest level won (0 = never). */
+  won: number;
+  bestWave: number;
 }
 
 const STORAGE_KEY = 'shattered-realm.progress';
 const BACKUP_KEY = STORAGE_KEY + '.backup';
-const fresh = (): Progress => ({ version: SAVE_VERSION, runs: 0, wins: 0, bestWave: 0, unlocked: [], highScores: [], gold: 0, classes: {}, accessories: {}, loadout: [] });
+const fresh = (): Progress => ({ version: SAVE_VERSION, runs: 0, wins: 0, bestWave: 0, unlocked: [], highScores: [], gold: 0, classes: {}, accessories: {}, loadout: [],
+  bounties: { active: [], progress: {}, next: 0, done: 0 }, milestones: [], kills: {}, codex: { cards: [], evolved: [] },
+  maps: {}, mastery: {}, selected: { mapId: DEFAULT_MAP, level: 1 },
+});
 
 let progress: Progress | null = null;
 /** True when the stored save comes from a newer version of the game: we play with it but never overwrite it. */
@@ -203,7 +256,41 @@ export function migrate(raw: unknown): Progress | null {
     classes,
     accessories,
     loadout: loadout.slice(0, LOADOUT_SLOTS),
+    bounties: cleanBounties(s.bounties),
+    milestones: strings(s.milestones),
+    kills: counts(s.kills),
+    codex: { cards: strings((s.codex as Record<string, unknown> | undefined)?.cards), evolved: strings((s.codex as Record<string, unknown> | undefined)?.evolved) },
+    maps: cleanMaps(s.maps),
+    mastery: counts(s.mastery),
+    selected: cleanSelected(s.selected),
   };
+}
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : []);
+function counts(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (v && typeof v === 'object') for (const [k, n] of Object.entries(v as Record<string, unknown>)) if (count(n) > 0) out[k] = count(n);
+  return out;
+}
+function cleanMaps(v: unknown): Record<string, MapProgress> {
+  const out: Record<string, MapProgress> = {};
+  if (!v || typeof v !== 'object') return out;
+  for (const def of MAPS) {
+    const m = (v as Record<string, Record<string, unknown> | undefined>)[def.id];
+    if (!m || typeof m !== 'object') continue;
+    const clampLevel = (n: unknown, min: number): number => Math.min(MAX_MAP_LEVEL, Math.max(min, Math.floor(count(n))));
+    out[def.id] = { open: m.open === true, level: clampLevel(m.level, 1), won: clampLevel(m.won, 0), bestWave: count(m.bestWave) };
+  }
+  return out;
+}
+function cleanSelected(v: unknown): Progress['selected'] {
+  const s = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const mapId = MAPS.some((m) => m.id === s.mapId) ? String(s.mapId) : DEFAULT_MAP;
+  return { mapId, level: Math.min(MAX_MAP_LEVEL, Math.max(1, Math.floor(count(s.level)) || 1)) };
+}
+function cleanBounties(v: unknown): Progress['bounties'] {
+  const b = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  return { active: strings(b.active).slice(0, 3), progress: counts(b.progress), next: Math.floor(count(b.next)), done: Math.floor(count(b.done)) };
 }
 
 /** Parse one stored string: the save, or null if it's missing or unreadable. Notes a newer-version save. */
@@ -222,11 +309,14 @@ function parseSave(raw: string | null | undefined): Progress | null {
 function load(): Progress {
   const store = storage();
   newerSave = false;
+  let p: Progress;
   try {
-    return parseSave(store?.getItem(STORAGE_KEY)) ?? parseSave(store?.getItem(BACKUP_KEY)) ?? fresh();
+    p = parseSave(store?.getItem(STORAGE_KEY)) ?? parseSave(store?.getItem(BACKUP_KEY)) ?? fresh();
   } catch {
-    return fresh();
+    p = fresh();
   }
+  fillBounties(p); // a new or migrated save starts with its first 3 bounties
+  return p;
 }
 
 /** The saved progress (loaded once, then kept in memory). */
@@ -274,8 +364,12 @@ export function recordRun(record: RunRecord): string[] {
   p.bestWave = Math.max(p.bestWave, record.wavesCleared + (record.win ? 0 : 1));
   lastRewards = rewardsFor(p, record, true);
   p.gold += lastRewards.gold;
-  if (record.win) lastRewards.loot = dropLoot(p);
   p.classes[record.classId] = { ...p.classes[record.classId], exp: lastRewards.expBefore + lastRewards.exp };
+  if (record.win) lastRewards.loot = dropLoot(p, lootShift(record.mapId ?? DEFAULT_MAP, record.mapLevel ?? 1));
+  lastRewards.mapNews = updateMaps(p, record);
+  // goals come last: milestones add their own EXP on top of the run's
+  lastRewards.completions = applyRunToGoals(p, record);
+  lastRewards.bonusExp = lastRewards.completions.reduce((n, c) => n + (c.kind === 'milestone' ? c.exp : 0), 0);
   lastUnlocked = UNLOCKS.filter((u) => !isClassUnlocked(u.classId) && u.isMet(record)).map((u) => u.classId);
   p.unlocked.push(...lastUnlocked);
   lastRank = addHighScore(p, record);
@@ -294,13 +388,13 @@ function rewardsFor(p: Progress, record: RunRecord, saved: boolean): RunRewards 
   const { gold, exp } = runRewards(record);
   return {
     classId: record.classId, gold, exp, saved,
-    expBefore: p.classes[record.classId]?.exp ?? 0, goldBefore: p.gold, coopBonus: (record.players || 1) > 1, loot: null,
+    expBefore: p.classes[record.classId]?.exp ?? 0, goldBefore: p.gold, coopBonus: (record.players || 1) > 1, loot: null, completions: [], bonusExp: 0, mapNews: [],
   };
 }
 
 /** The final boss's drop: the Shard of the Crown on the first win, then a roll on the loot table. */
-function dropLoot(p: Progress): LootResult {
-  const def = !p.accessories.shard_of_the_crown ? accessoryDef('shard_of_the_crown')! : rollAccessory(Math.random);
+function dropLoot(p: Progress, shift: number): LootResult {
+  const def = !p.accessories.shard_of_the_crown ? accessoryDef('shard_of_the_crown')! : rollAccessory(Math.random, shift);
   const owned = p.accessories[def.id] ?? 0;
   if (!owned) { p.accessories[def.id] = 1; return { id: def.id, level: 1, isNew: true, gold: 0 }; }
   if (owned < maxLevelOf(def)) { p.accessories[def.id] = owned + 1; return { id: def.id, level: owned + 1, isNew: false, gold: 0 }; }
@@ -337,6 +431,87 @@ export function upgradeAccessory(id: string): boolean {
   return true;
 }
 
+// ------------------------------------------------------------ maps: access, levels, mastery, the selection
+
+/** This player's progress on a map (the first map is always open). */
+export function mapProgress(mapId: string): MapProgress {
+  const m = getProgress().maps[mapId];
+  const first = !previousMap(mapId);
+  return { open: first || !!m?.open, level: m?.level ?? 1, won: m?.won ?? 0, bestWave: m?.bestWave ?? 0 };
+}
+export const isMapOpen = (mapId: string): boolean => mapProgress(mapId).open;
+
+/** How to open a locked map, or '' if it's open. */
+export function mapUnlockText(mapId: string): string {
+  const prev = previousMap(mapId);
+  if (isMapOpen(mapId) || !prev) return '';
+  return 'Reach wave 6 on ' + prev.name + ', or ' + mapDef(mapId).price + ' gold';
+}
+
+/** Mastery stars (0-3) a class has on a map. */
+export function masteryStars(mapId: string, classId: string): number {
+  const bits = getProgress().mastery[mapId + ':' + classId] ?? 0;
+  return (bits & 1 ? 1 : 0) + (bits & 2 ? 1 : 0) + (bits & 4 ? 1 : 0);
+}
+
+/** Map progress from a finished run. Returns what's new, for the rewards reel. */
+function updateMaps(p: Progress, r: RunRecord): string[] {
+  const news: string[] = [], id = mapDef(r.mapId ?? DEFAULT_MAP).id, level = r.mapLevel ?? 1, def = mapDef(id);
+  const m = (p.maps[id] ??= { open: true, level: 1, won: 0, bestWave: 0 });
+  m.open = true;
+  m.bestWave = Math.max(m.bestWave, r.wavesCleared + (r.win ? 0 : 1));
+  if (r.win) {
+    m.won = Math.max(m.won, level);
+    if (level >= m.level && m.level < MAX_MAP_LEVEL) { m.level = level + 1; news.push(def.name + ' level ' + m.level + ' unlocked'); }
+    const key = id + ':' + r.classId, before = masteryBits(p, key);
+    const bits = before | 1 | ((r.teamDowns ?? 0) === 0 ? 2 : 0) | (level >= 5 ? 4 : 0);
+    p.mastery[key] = bits;
+    if (bits !== before) news.push('Mastery on ' + def.name + ': ' + '★'.repeat(popcount(bits)) + '☆'.repeat(3 - popcount(bits)) + ' with ' + (r.className || r.classId));
+  }
+  // reaching wave 6, or winning, opens the next map
+  const next = MAPS[MAPS.findIndex((x) => x.id === id) + 1];
+  if (next && (r.win || r.wavesCleared >= 5) && !p.maps[next.id]?.open) {
+    p.maps[next.id] = { ...(p.maps[next.id] ?? { level: 1, won: 0, bestWave: 0 }), open: true };
+    news.push('New map: ' + next.name);
+  }
+  return news;
+}
+const masteryBits = (p: Progress, key: string): number => p.mastery[key] ?? 0;
+const popcount = (bits: number): number => (bits & 1 ? 1 : 0) + (bits & 2 ? 1 : 0) + (bits & 4 ? 1 : 0);
+
+/** Buy a locked map with gold. Returns false if it's open or gold is short. */
+export function buyMap(mapId: string): boolean {
+  const p = refresh(), def = mapDef(mapId);
+  if (def.id !== mapId || isMapOpen(mapId) || p.gold < def.price) return false;
+  p.gold -= def.price;
+  p.maps[mapId] = { ...(p.maps[mapId] ?? { level: 1, won: 0, bestWave: 0 }), open: true };
+  save();
+  return true;
+}
+
+/** The map and level for the next solo run (or hosted room): the selection, kept within what's unlocked. */
+export function selectedMap(): { mapId: string; level: number } {
+  const s = getProgress().selected, open = isMapOpen(s.mapId);
+  const mapId = open ? s.mapId : DEFAULT_MAP;
+  return { mapId, level: Math.min(Math.max(1, s.level), mapProgress(mapId).level) };
+}
+
+/** Pick the map and level for the next run. Returns false if the map is locked or the level isn't unlocked yet. */
+export function selectMap(mapId: string, level: number): boolean {
+  if (!isMapOpen(mapId) || level < 1 || level > mapProgress(mapId).level) return false;
+  const p = refresh();
+  p.selected = { mapId, level };
+  save();
+  return true;
+}
+
+/** This player's Slayer tiers by monster key (what a hero carries into a run). */
+export function slayerTiers(): Record<string, number> {
+  const kills = getProgress().kills, out: Record<string, number> = {};
+  for (const key of Object.keys(kills)) { const tier = slayerTier(key, kills[key]); if (tier) out[key] = tier; }
+  return cleanSlayer(out);
+}
+
 /** Gold price of a locked class (0 if it's open or can't be bought). */
 export const classPrice = (classId: string): number =>
   isClassUnlocked(classId) ? 0 : UNLOCKS.find((u) => u.classId === classId)?.price ?? 0;
@@ -356,6 +531,7 @@ function addHighScore(p: Progress, record: RunRecord): number {
   const entry: HighScore = {
     score: runScore(record), classId: record.classId, wave: record.win ? 12 : record.wavesCleared + 1, win: record.win,
     time: Math.round(record.time || 0), players: record.players || 1, date: new Date().toISOString().slice(0, 10),
+    mapId: record.mapId ?? DEFAULT_MAP, mapLevel: record.mapLevel ?? 1,
   };
   // a tie goes below the older run, so an equal score never pushes an older entry down
   let rank = p.highScores.findIndex((h) => entry.score > h.score);
@@ -387,6 +563,7 @@ export function importSave(text: string): boolean {
   const imported = migrate(data);
   if (!imported) return false;
   progress = imported;
+  fillBounties(progress);
   newerSave = false;
   save();
   return true;
@@ -399,6 +576,7 @@ export function unlockAll(): void {
 }
 export function resetProgress(): void {
   progress = fresh();
+  fillBounties(progress);
   lastUnlocked = [];
   lastRank = -1;
   lastRewards = null;

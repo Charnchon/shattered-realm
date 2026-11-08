@@ -57,7 +57,9 @@ function updateEnemyShot(s: EnemyShot, dt: number): void {
     if (h.down || h.gone) continue;
     const p = h.player;
     if ((p.x - s.x) ** 2 + (p.y - s.y) ** 2 <= (p.r + s.r) ** 2) {
+      const before = p.hp;
       hurtHero(h, s.dmg);
+      if (s.kind === 'archer' && p.hp < before) h.tally.arrowHits++;
       s.dead = true;
       return;
     }

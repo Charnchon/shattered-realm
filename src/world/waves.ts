@@ -7,6 +7,7 @@ import { endRun } from '../game/run';
 import { BOSS_DEFS, spawnBoss } from './bosses';
 import { reviveHero } from './combat';
 import { ENEMY_TYPES, spawnEnemy } from './enemies';
+import { currentMods, mapDef } from './maps';
 
 /** Downed heroes come back at the start of each wave with this share of their HP. */
 const WAVE_REVIVE_HP = 0.5;
@@ -53,8 +54,10 @@ function atLimit(type: EnemyTypeId): boolean {
 }
 
 /** Chance that a spawn on this wave is an elite. */
-const eliteChance = (wave: number): number =>
-  wave >= ELITE_FROM_WAVE ? ELITE_CHANCE + ELITE_CHANCE_PER_WAVE * (wave - ELITE_FROM_WAVE) : 0;
+function eliteChance(wave: number): number {
+  const from = Math.min(ELITE_FROM_WAVE, currentMods().eliteFromWave); // map level 3+: from wave 4
+  return wave >= from ? ELITE_CHANCE + ELITE_CHANCE_PER_WAVE * Math.max(0, wave - ELITE_FROM_WAVE) : 0;
+}
 
 export function startWave(wave: number): void {
   run.wave = wave;
@@ -83,16 +86,18 @@ export function completeWave(): void {
 export function updateWave(dt: number): void {
   run.waveTime += dt;
   const wave = run.wave, boss = isBossWave(wave);
-  const spawnRate = (boss ? 0.25 + 0.04 * wave : 0.5 + 0.15 * wave) * partyScale(0.6);
+  const mods = currentMods();
+  const spawnRate = (boss ? 0.25 + 0.04 * wave : 0.5 + 0.15 * wave) * partyScale(0.6) * mods.spawnMul;
   run.spawnBudget += spawnRate * dt;
-  const weights = spawnWeights(wave);
+  const weights = spawnWeights(wave), mix = mapDef(run.mapId).spawnMul ?? {};
+  for (const k of Object.keys(mix) as EnemyTypeId[]) if (weights[k]) weights[k] = (weights[k] ?? 0) * (mix[k] ?? 1); // the map's usual crowd
   while (run.spawnBudget >= 1) {
     run.spawnBudget -= 1;
-    if (run.enemies.length >= ENEMY_CAP * partyScale(0.25)) break;
+    if (run.enemies.length >= ENEMY_CAP * partyScale(0.25) * mods.spawnMul) break;
     const types = (Object.keys(weights) as EnemyTypeId[]).filter((k) => (weights[k] ?? 0) > 0 && !atLimit(k));
     const type = weightedPick(types, (k) => weights[k] ?? 0);
     const pos = findSpawnPosition();
-    const elite = wave >= ELITE_FROM_WAVE && Math.random() < eliteChance(wave);
+    const elite = eliteChance(wave) > 0 && Math.random() < eliteChance(wave);
     if (type === 'bat' && Math.random() < 0.3) {
       // bats sometimes arrive as a small flock
       for (let i = 0; i < 3; i++) spawnEnemy('bat', pos.x + randRange(-30, 30), pos.y + randRange(-30, 30), false);

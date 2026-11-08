@@ -13,6 +13,7 @@ function stubContext(counter) {
   const known = {
     measureText: (s) => ({ width: String(s).length * 7 }),
     createLinearGradient: () => ({ addColorStop() {} }),
+    createRadialGradient: () => ({ addColorStop() {} }),
     drawImage: (...args) => { counter.drawCalls++; counter.images.push(args.slice(1, 5)); },
   };
   return new Proxy(known, {

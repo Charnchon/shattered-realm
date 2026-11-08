@@ -11,6 +11,9 @@ import { CARD_MAX_LEVEL, OFFER_SIZE, PART_LABEL, canReroll, cardDef, relicDef, r
 import { classPrice, getProgress, isClassUnlocked, lastRank, unlockText } from '../meta/progress';
 import { LOADOUT_SLOTS } from '../meta/accessories';
 import { drawGearPanel, gearOpen } from './gear';
+import { codexOpen, drawBountyStrip, drawCodex } from './codex';
+import { drawMapBadge, drawMapPanel, mapPanelOpen } from './mapscreen';
+import { mapDef } from '../world/maps';
 import { net } from '../net/session';
 import { offerFadeIn } from '../game/controls';
 import { drawScoreboard, groupDigits, liveScore, scoreboardHeight } from './scoreboard';
@@ -209,18 +212,23 @@ export function drawMenu(): void {
   const open = CLASS_ORDER.filter(isClassUnlocked).length, best = getProgress().highScores[0];
   const bestText = best ? 'Best score ' + groupDigits(best.score) + ' · H for high scores' : 'H for high scores';
   drawText(goldText() + ' · ' + open + ' of ' + CLASS_ORDER.length + ' classes unlocked · ' + bestText, VIEW_W / 2, 96, 13, COLOR.muted, 'center');
+  drawMapBadge();
   const rects = menuCardRects();
   CLASS_ORDER.forEach((id, i) => drawClassTile(CLASSES[id], rects[i], i, menuSelection === i));
   drawClassDetail(CLASSES[CLASS_ORDER[menuSelection]]);
   const online = menuOnlineButtons();
   drawButton(online.host, 'Create room · C', COLOR.teal, COLOR.teal, 21);
   drawButton(online.join, 'Join room · J', COLOR.gold, COLOR.gold, 21);
-  if (net.notice) drawText(net.notice, VIEW_W / 2, 470, 13, COLOR.ember, 'center');
-  drawText('WASD move · Left click Strike · Right click Heavy Strike · Space dash · Q Ultimate · Esc pause', VIEW_W / 2, 490, 13, COLOR.text, 'center');
-  const godHint = 'Click a class or press 1–' + CLASS_ORDER.length + ' to play solo. Press G for test mode (can\'t die, unlocks don\'t count): ' + (DEBUG.god ? 'ON' : 'off');
-  drawText(godHint, VIEW_W / 2, 512, 12, DEBUG.god ? COLOR.gold : COLOR.dim, 'center');
+  drawBountyStrip(458);
+  // a notice (e.g. "not enough gold") takes the controls line's place
+  if (net.notice) drawText(net.notice, VIEW_W / 2, 508, 13, COLOR.ember, 'center');
+  else drawText('WASD move · Left click Strike · Right click Heavy · Space dash · Q Ultimate  ·  E accessories · B codex · H high scores', VIEW_W / 2, 508, 12, COLOR.text, 'center');
+  const godHint = 'Click a class or press 1–' + CLASS_ORDER.length + ' to play solo. G = test mode (can\'t die, nothing is saved): ' + (DEBUG.god ? 'ON' : 'off');
+  drawText(godHint, VIEW_W / 2, 527, 11, DEBUG.god ? COLOR.gold : COLOR.dim, 'center');
   if (highScoresOpen) drawHighScores();
   if (gearOpen) drawGearPanel();
+  if (codexOpen) drawCodex(CLASS_ORDER[menuSelection]);
+  if (mapPanelOpen) drawMapPanel(CLASS_ORDER[menuSelection]);
 }
 
 /** "Create room" / "Join room", top right of the class select screen. */
@@ -247,6 +255,7 @@ export function drawLobby(): void {
   drawPixelText('Room code', VIEW_W / 2, 56, 18, COLOR.muted, 'center');
   drawPixelText(net.code || '·····', VIEW_W / 2, 112, 56, COLOR.gold, 'center');
   drawText(host ? 'Send this code (or the invite link) to your friends. They choose Join room and type it in.' : 'You\'re in! Waiting for the host to start.', VIEW_W / 2, 140, 13, COLOR.muted, 'center');
+  drawText('Map: ' + mapDef(net.map.mapId).name + ' · level ' + net.map.level + (host ? ' (change it on class select with M)' : ''), VIEW_W / 2, 160, 13, COLOR.teal, 'center');
 
   const w = 200, gap = 14, x0 = VIEW_W / 2 - (4 * w + 3 * gap) / 2, y = 168, h = 220;
   for (let i = 0; i < 4; i++) {
@@ -456,8 +465,8 @@ export function drawPause(): void {
 
 export function resultButtons(): { again: Rect; menu: Rect } {
   return {
-    again: { x: VIEW_W / 2 - 230, y: 476, w: 210, h: 44 },
-    menu: { x: VIEW_W / 2 + 20, y: 476, w: 210, h: 44 },
+    again: { x: VIEW_W / 2 - 230, y: 492, w: 210, h: 40 },
+    menu: { x: VIEW_W / 2 + 20, y: 492, w: 210, h: 40 },
   };
 }
 
@@ -469,21 +478,21 @@ export function drawResult(): void {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   drawPixelText(result.win ? 'Victory' : 'Defeated', VIEW_W / 2, 52, 40, accent, 'center');
   const how = result.win ? 'The Hollow King has fallen.' : 'Fell on wave ' + run.wave + ' of ' + FINAL_WAVE + '.';
-  const summary = how + '  ·  Waves ' + run.wavesCleared + '/' + FINAL_WAVE + '  ·  Bosses ' + run.bossesKilled + '/' + BOSS_COUNT + '  ·  ' + formatTime(result.time);
+  const summary = how + '  ·  ' + mapDef(run.mapId).name + ' ' + run.mapLevel + '  ·  Waves ' + run.wavesCleared + '/' + FINAL_WAVE + '  ·  Bosses ' + run.bossesKilled + '/' + BOSS_COUNT + '  ·  ' + formatTime(result.time);
   drawText(summary, VIEW_W / 2, 76, 14, COLOR.muted, 'center');
   const rank = lastRank >= 0 ? '   ·   New high score #' + (lastRank + 1) + '!' : '';
   drawPixelText('Score ' + groupDigits(liveScore()) + rank, VIEW_W / 2, 106, 22, COLOR.gold, 'center');
   // scoreboard, then this player's rewards right under it (4 players: 120..280, rewards 290..418)
   drawScoreboard(120, accent);
-  drawRewards(120 + scoreboardHeight() + 8);
+  drawRewards(120 + scoreboardHeight() + 6);
   const b = resultButtons();
   if (net.mode === 'client') {
-    drawText('Waiting for the host…', b.again.x + b.again.w / 2, b.again.y + 27, 13, COLOR.dim, 'center');
-    drawButton(b.menu, 'Leave · Esc', COLOR.frame, COLOR.text, 28);
+    drawText('Waiting for the host…', b.again.x + b.again.w / 2, b.again.y + 25, 13, COLOR.dim, 'center');
+    drawButton(b.menu, 'Leave · Esc', COLOR.frame, COLOR.text, 26);
     return;
   }
-  drawButton(b.again, 'Play again · Enter', COLOR.teal, COLOR.teal, 28);
-  drawButton(b.menu, net.mode === 'host' ? 'Back to room · Esc' : 'Change class · Esc', COLOR.frame, COLOR.text, 28);
+  drawButton(b.again, 'Play again · Enter', COLOR.teal, COLOR.teal, 26);
+  drawButton(b.menu, net.mode === 'host' ? 'Back to room · Esc' : 'Change class · Esc', COLOR.frame, COLOR.text, 26);
 }
 
 // ------------------------------------------------------------ high scores (menu panel)
@@ -507,7 +516,7 @@ function drawHighScores(): void {
     drawText(CLASSES[e.classId]?.name ?? e.classId, x + 175, ry, 14, color);
     drawText(e.win ? 'Victory' : 'Wave ' + e.wave, x + 330, ry, 14, e.win ? COLOR.gold : COLOR.muted);
     drawText(formatTime(e.time), x + 420, ry, 14, COLOR.muted);
-    drawText(e.players > 1 ? e.players + 'P co-op' : 'Solo', x + 480, ry, 14, COLOR.muted);
+    drawText((e.players > 1 ? e.players + 'P' : 'Solo') + ' · ' + mapDef(e.mapId ?? 'forest').name.split(' ').pop() + ' ' + (e.mapLevel ?? 1), x + 470, ry, 12, COLOR.muted);
     drawText(e.date, x + w - 20, ry, 12, COLOR.dim, 'right');
   });
   drawText('H or Esc to close', VIEW_W / 2, y + h + 22, 12, COLOR.dim, 'center');

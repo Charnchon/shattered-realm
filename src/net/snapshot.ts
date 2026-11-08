@@ -2,6 +2,7 @@
 // The host runs the only simulation. About 20 times a second it sends a snapshot of what the
 // screens need to draw; joined players rebuild a read-only `run` from it and render that.
 // Busy lists (enemies, shots, zones, gems) are packed into arrays to keep messages small.
+import type { Hazard } from '../types';
 import type {
   Boss, Coin, EnemyTypeId, Fx, FloatingText, Gem, Hero, Mob, Offer, Player, Run, RunResult, SafeZone, SceneId, Shot,
   Banner, Stats, Telegraph, Zone,
@@ -48,9 +49,14 @@ export interface HeroSnap {
   ack?: number;
   score: Hero['score'];
   accessories: Hero['accessories'];
+  slayer: Hero['slayer'];
+  tally: Hero['tally'];
 }
 
 export interface Snapshot {
+  mapId: string;
+  mapLevel: number;
+  hazards: Hazard[];
   t: 'snap';
   scene: SceneId;
   time: number;
@@ -123,7 +129,7 @@ function snapHero(h: Hero): HeroSnap {
     idx: h.idx, name: h.name, classId: h.classId, down: h.down, revive: h.revive, gone: h.gone,
     player: h.player, stats: h.stats, cardSlots: h.cardSlots, cards: h.cards, relics: h.relics, statCards: h.statCards,
     pendingLevelUps: h.pendingLevelUps, offer: h.offer, rerolls: h.rerolls, coinsHeld: h.coinsHeld,
-    magnetAllTime: h.magnetAllTime, allies: h.allies, classState: h.classState, ack: h.ack, score: h.score, accessories: h.accessories,
+    magnetAllTime: h.magnetAllTime, allies: h.allies, classState: h.classState, ack: h.ack, score: h.score, accessories: h.accessories, slayer: h.slayer, tally: h.tally,
   };
 }
 
@@ -132,6 +138,7 @@ export function encodeSnapshot(run: Run, scene: SceneId): string {
   const snap: Snapshot = {
     t: 'snap', scene,
     time: run.time, wave: run.wave, waveTime: run.waveTime, waveDuration: run.waveDuration,
+    mapId: run.mapId, mapLevel: run.mapLevel, hazards: run.hazards,
     bossesKilled: run.bossesKilled, wavesCleared: run.wavesCleared, kills: run.kills,
     shake: run.shake, banner: run.banner, safeZone: run.safeZone, result: run.result,
     heroes: run.heroes.map(snapHero),
@@ -215,6 +222,7 @@ export function decodeSnapshot(snap: Snapshot, localHero: number, previous: Run 
   const enemies = [...snap.mobs.map(unpackMob), ...snap.bosses];
   Object.assign(run, {
     time: snap.time, wave: snap.wave, waveTime: snap.waveTime, waveDuration: snap.waveDuration,
+    mapId: snap.mapId, mapLevel: snap.mapLevel, hazards: snap.hazards ?? [],
     bossesKilled: snap.bossesKilled, wavesCleared: snap.wavesCleared, kills: snap.kills,
     shake: snap.shake, banner: snap.banner, safeZone: snap.safeZone, result: snap.result,
     enemies,

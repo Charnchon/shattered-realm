@@ -19,11 +19,17 @@ import {
 } from '../net/session';
 import { encodeSnapshot } from '../net/snapshot';
 import * as progress from '../meta/progress';
+import * as maps from '../world/maps';
 import { isClassUnlocked, unlockText } from '../meta/progress';
 import { drawWorld } from '../render/world';
 import { advanceRewardsReel } from '../render/rewards';
 import { gearCloseRect, gearOpen, gearRowRects, gearUpgradeRect, setGearOpen } from '../render/gear';
 import { ACCESSORIES } from '../meta/accessories';
+import { codexCloseRect, codexOpen, codexTabRects, setCodexOpen, setCodexTab } from '../render/codex';
+import {
+  levelArrowRects, mapBadgeRect, mapBuyRect, mapCloseRect, mapCursor, mapPanelOpen, mapRowRects, setMapCursor, setMapPanelOpen,
+} from '../render/mapscreen';
+import { MAPS } from '../world/maps';
 import { hitEnemy, hurtHero, hurtHeroOverTime, reviveHero } from '../world/combat';
 import { updateEffects } from '../world/effects';
 import { spawnEnemy, updateEnemies } from '../world/enemies';
@@ -32,6 +38,7 @@ import { updatePlayer } from '../world/player';
 import { updateShots } from '../world/projectiles';
 import { updateWave } from '../world/waves';
 import { updateZones } from '../world/zones';
+import { updateMap } from '../world/hazards';
 import { botThink } from './bot';
 import { applyInput, forgetOffer, offerReady, readLocalInput } from './controls';
 import { endRun, newRun, newRunWith } from './run';
@@ -52,6 +59,7 @@ export function step(dt: number): void {
   updateEnemies(dt);
   updateShots(dt);
   updateZones(dt);
+  updateMap(dt);
   updatePickups(dt);
   if (scene !== SCENE.PLAY) return; // the run may have ended this frame
   updateWave(dt);
@@ -117,6 +125,31 @@ function updateGearPanel(): void {
   });
 }
 
+/** Codex panel: 1 / 2 or a click switches tabs; B, Esc or Close shuts it. */
+function updateCodexPanel(): void {
+  if (keysPressed.b || keysPressed.escape || (mouse.leftPressed && mouseIn(codexCloseRect()))) { setCodexOpen(false); return; }
+  const tabs = codexTabRects();
+  if (keysPressed['1'] || (mouse.leftPressed && mouseIn(tabs.bestiary))) setCodexTab('bestiary');
+  if (keysPressed['2'] || (mouse.leftPressed && mouseIn(tabs.cards))) setCodexTab('cards');
+}
+
+/** Map panel: pick a map (click or 1-5), its level (arrows), unlock one with gold (U or its button). */
+function updateMapPanel(): void {
+  if (keysPressed.m || keysPressed.escape || keysPressed.enter || (mouse.leftPressed && mouseIn(mapCloseRect()))) { setMapPanelOpen(false); return; }
+  const sel = progress.selectedMap(), rows = mapRowRects();
+  MAPS.forEach((def, i) => {
+    const clicked = mouse.leftPressed && mouseIn(rows[i]);
+    if (!clicked && !keysPressed[String(i + 1)]) return;
+    setMapCursor(i);
+    if (clicked && mouseIn(mapBuyRect(rows[i]))) progress.buyMap(def.id);
+    if (progress.isMapOpen(def.id)) progress.selectMap(def.id, Math.min(sel.mapId === def.id ? sel.level : progress.mapProgress(def.id).level, progress.mapProgress(def.id).level));
+  });
+  if (keysPressed.u) progress.buyMap(MAPS[mapCursor].id);
+  const arrows = levelArrowRects(), now = progress.selectedMap();
+  if (keysPressed.arrowleft || keysPressed.a || (mouse.leftPressed && mouseIn(arrows.down))) progress.selectMap(now.mapId, now.level - 1);
+  if (keysPressed.arrowright || keysPressed.d || (mouse.leftPressed && mouseIn(arrows.up))) progress.selectMap(now.mapId, now.level + 1);
+}
+
 /** Buy the highlighted locked class with gold (U, or its button). */
 function buySelectedClass(): void {
   const id = CLASS_ORDER[menuSelection], price = progress.classPrice(id);
@@ -143,6 +176,10 @@ const SCENE_UPDATE: Record<SceneId, (dt: number) => void> = {
     if (keysPressed.h) { setHighScoresOpen(true); return; }
     if (gearOpen) { updateGearPanel(); return; }
     if (keysPressed.e) { setGearOpen(true); return; }
+    if (codexOpen) { updateCodexPanel(); return; }
+    if (keysPressed.b) { setCodexOpen(true); return; }
+    if (mapPanelOpen) { updateMapPanel(); return; }
+    if (keysPressed.m || (mouse.leftPressed && mouseIn(mapBadgeRect()))) { setMapPanelOpen(true); return; }
     if (keysPressed.u || (mouse.leftPressed && mouseIn(buyClassRect()))) buySelectedClass();
     const rects = menuCardRects(), hovered = hoveredIndex(rects), count = CLASS_ORDER.length;
     if (hovered >= 0) setMenuSelection(hovered);
@@ -278,6 +315,8 @@ function installTestHooks(): void {
     keysDown, keysPressed,
     /** Saved progress and unlocks: __SR.progress.unlockAll(), .resetProgress(), .getProgress(). */
     progress,
+    /** Maps and map levels: __SR.maps.MAPS, .levelMods(level). */
+    maps,
     /** End the current run right away (tests). */
     endRunForTest: endRun,
     get run() { return run; },

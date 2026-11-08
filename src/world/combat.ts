@@ -8,6 +8,7 @@ import { onBossDefeated } from './bosses';
 import { addFloatingText, spawnBurst } from './effects';
 import { DAZED_DAMAGE_MUL, ENEMY_TYPES, IMP_BLAST, cancelWindup, enemiesInRadius, spawnEnemy } from './enemies';
 import { ELITE_HEAL_ORB, dropCoin, dropGem } from './pickups';
+import { currentMods } from './maps';
 
 const SHIELD_BLOCK_MUL = 0.2;
 const SHIELD_ARC = 1.0;
@@ -23,6 +24,7 @@ export function hitEnemy(e: Enemy | null, amount: number, opts: HitOptions = {})
   const stats = run.stats, cls = run.cls;
   let damage = amount * stats.damage;
   if (!e.boss && (e.dazedTime ?? 0) > 0) damage *= DAZED_DAMAGE_MUL; // a dazed boar is open
+  damage *= slayerMul(e); // Slayer achievements: up to +5% against a monster type
   if (cls.damageMod) damage *= cls.damageMod(e, opts);
 
   let crit = false;
@@ -48,6 +50,10 @@ export function hitEnemy(e: Enemy | null, amount: number, opts: HitOptions = {})
   }
 
   run.hero.score.damage += Math.min(damage, Math.max(0, e.hp)); // overkill doesn't count
+  if (!e.boss) {
+    e.lastHitBy = run.hero.idx;
+    if ((e.dazedTime ?? 0) > 0) run.hero.tally.dazedHits++;
+  }
   e.hp -= damage;
   e.flash = 0.08;
   if (!opts.silent && damage >= 0.5) {
@@ -67,6 +73,7 @@ export function hitEnemy(e: Enemy | null, amount: number, opts: HitOptions = {})
 function applyHeavyHit(e: Enemy): void {
   if (!e.boss && e.hasShield && !e.shieldBroken) {
     e.shieldBroken = true;
+    run.hero.tally.shieldBreaks++;
     addFloatingText(e.x, e.y - 20, 'shield broken', COLOR.gold, 11);
   }
   if (e.boss) {
@@ -85,11 +92,14 @@ export function killEnemy(e: Enemy, opts: HitOptions = {}): void {
   e.dead = true;
   run.kills++;
   run.hero.score.kills++; // the current hero landed the killing blow
+  const key = monsterKey(e), tally = run.hero.tally;
+  tally.killsByType[key] = (tally.killsByType[key] ?? 0) + 1;
+  if (e.elite) tally.eliteKills++;
   spawnBurst(e.x, e.y, e.color, e.elite ? 14 : 7, 90);
   if (e.boss) { onBossDefeated(e); return; }
   dropGem(e.x, e.y, e.xp * (1 + 0.3 * (run.wave - 1)), e.elite);
   // every class can recover HP: elites drop a heal orb (it goes to whoever picks it up)
-  if (e.elite) dropCoin(e.x, e.y, ELITE_HEAL_ORB, 'heal');
+  if (e.elite) dropCoin(e.x, e.y, ELITE_HEAL_ORB * currentMods().healOrbMul, 'heal');
   addUlt((e.elite ? ULT_PER_ELITE_KILL : ULT_PER_KILL) * run.stats.ultRate);
   cancelWindup(e); // a dead archer/healer/imp's warning disappears with it
   const def = ENEMY_TYPES[e.type];
@@ -106,8 +116,21 @@ const IMP_CHAIN_DAMAGE = 30;
 /** Killing an imp before its fuse runs out makes it explode on its own side. */
 function blowUpImp(e: Mob): void {
   spawnBurst(e.x, e.y, '#ff7a4a', 16, 140);
-  for (const o of enemiesInRadius(e.x, e.y, IMP_BLAST)) if (o !== e) hitEnemy(o, IMP_CHAIN_DAMAGE, { noCrit: true });
+  for (const o of enemiesInRadius(e.x, e.y, IMP_BLAST)) {
+    if (o === e) continue;
+    hitEnemy(o, IMP_CHAIN_DAMAGE, { noCrit: true });
+    if (o.dead) run.hero.tally.impChainKills++;
+  }
 }
+
+/**
+ * The key a kill counts under for Slayer and the bestiary: the enemy type, or the boss kind.
+ * Split slimes count as slimes.
+ */
+export const monsterKey = (e: Enemy): string => (e.boss ? e.kind : e.type === 'mini' ? 'slime' : e.type);
+
+/** +1% damage per Slayer tier the current hero has against this monster. */
+const slayerMul = (e: Enemy): number => 1 + 0.01 * (run.hero.slayer?.[monsterKey(e)] ?? 0);
 
 /** Make an enemy bleed. Keeps the stronger of the current and new bleed. */
 export function applyBleed(e: Enemy, dps: number, duration: number): void {
@@ -204,6 +227,7 @@ function checkPlayerDeath(): void {
   if (run.cls.onLethal && run.cls.onLethal()) return;
   p.hp = 0;
   run.hero.down = true;
+  run.hero.tally.downs++;
   run.hero.revive = 0;
   p.dashTime = 0;
   if (livingHeroes().length === 0) { endRun(false); return; }

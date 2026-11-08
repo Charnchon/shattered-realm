@@ -119,12 +119,19 @@ export function upgradeCost(def: AccessoryDef, level: number): number {
   return level === 1 ? ACCESSORY_VALUE[def.rarity] / 2 : ACCESSORY_VALUE[def.rarity];
 }
 
-/** Roll one accessory from the loot table (`random` in [0, 1), twice). */
-export function rollAccessory(random: () => number): AccessoryDef {
-  const rarities = Object.keys(LOOT_WEIGHTS) as (keyof typeof LOOT_WEIGHTS)[];
-  const total = rarities.reduce((n, r) => n + LOOT_WEIGHTS[r], 0);
+/** Drop weights after `shift` points move from Common to Rare (3 of every 4) and Epic (1 of every 4); Common keeps 20. */
+export function lootWeights(shift = 0): Record<keyof typeof LOOT_WEIGHTS, number> {
+  const moved = Math.min(Math.max(0, shift), LOOT_WEIGHTS.common - 20);
+  return { common: LOOT_WEIGHTS.common - moved, rare: LOOT_WEIGHTS.rare + moved * 0.75, epic: LOOT_WEIGHTS.epic + moved * 0.25 };
+}
+
+/** Roll one accessory from the loot table (`random` in [0, 1), twice). `shift` improves the odds (harder maps). */
+export function rollAccessory(random: () => number, shift = 0): AccessoryDef {
+  const weights = lootWeights(shift);
+  const rarities = Object.keys(weights) as (keyof typeof weights)[];
+  const total = rarities.reduce((n, r) => n + weights[r], 0);
   let pick = random() * total, rarity = rarities[0];
-  for (const r of rarities) { if (pick < LOOT_WEIGHTS[r]) { rarity = r; break; } pick -= LOOT_WEIGHTS[r]; }
+  for (const r of rarities) { if (pick < weights[r]) { rarity = r; break; } pick -= weights[r]; }
   const pool = ACCESSORIES.filter((a) => a.rarity === rarity);
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }

@@ -122,6 +122,20 @@ Add an entry to `ACCESSORIES` in `src/meta/accessories.ts`: `rarity` (sets its d
 for Lv 1 / 2 / 3, a trade-off, and `apply(stats, level)` (runs in `recalcStats`). It joins the final boss's loot table
 and the accessories panel (E) by itself. Keep a real trade-off: accessories count toward the 30% meta power budget.
 
+### New bounty or milestone
+
+Bounties: add an entry to `BOUNTIES` in `src/meta/goals.ts` (`text`, `goal`, `gold`, and `measure(run)`, which reads
+the run's counters: `run.tally`, `wavesCleared`, `bossesKilled`). Keep every bounty doable solo. If it needs a new
+counter, add it to `RunTally` (`types.ts`), start it in `createHero` (`game/run.ts`) and count it where it happens, as
+the current hero (`run.hero.tally`). Milestones (one-off) go in `milestonesFor`.
+
+### New map
+
+Add an entry to `MAPS` in `src/world/maps.ts`: name, stars, reward multiplier, gold price, ground colours, an optional
+`spawnMul` (its usual crowd) and its modifier (`vision`, `mushrooms`, `lavaCracks`, `enemyRegen`, or a new field read
+in `src/world/hazards.ts`). Maps unlock in table order. A modifier that changes how heroes move must also go into
+`moveHero` and online prediction, so prefer hazards and enemy rules. Map levels (`LEVEL_LADDER`) apply to every map.
+
 ### New relic or stat card
 
 Add to `RELICS` / `STAT_CARDS` in `progression/cards.ts` and apply the effect in `recalcStats` (`core/state.ts`).

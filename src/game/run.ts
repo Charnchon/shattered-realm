@@ -3,7 +3,9 @@ import type { Hero, HeroInput, Player, Run, Stats } from '../types';
 import { ARENA_H, ARENA_W, SCENE } from '../core/constants';
 import { DEBUG, localHero, recalcStats, run, setRun, setScene, withHero } from '../core/state';
 import { CLASSES } from '../classes/registry';
-import { clearLastUnlocked, equippedLoadout, previewRun, recordRun, type RunRecord } from '../meta/progress';
+import { clearLastUnlocked, equippedLoadout, previewRun, recordRun, selectedMap, slayerTiers, type RunRecord } from '../meta/progress';
+import { DEFAULT_MAP, MAX_MAP_LEVEL, mapDef } from '../world/maps';
+import { setUpMap } from '../world/hazards';
 import type { EquippedAccessory } from '../meta/accessories';
 import { spawnEnemy } from '../world/enemies';
 import { findSpawnPosition, startWave } from '../world/waves';
@@ -21,6 +23,8 @@ export interface HeroSpec {
   bot?: boolean;
   /** Equipped accessories (already checked with `cleanLoadout`). */
   accessories?: EquippedAccessory[];
+  /** Slayer tiers (already checked with `cleanSlayer`). */
+  slayer?: Record<string, number>;
 }
 
 /**
@@ -81,6 +85,8 @@ export function createHero(idx: number, spec: HeroSpec, count: number): Hero {
     down: false, revive: 0, gone: false,
     score: { kills: 0, damage: 0, taken: 0, revives: 0 },
     accessories: spec.accessories ?? [],
+    slayer: spec.slayer ?? {},
+    tally: { killsByType: {}, eliteKills: 0, interrupts: 0, dazedHits: 0, impChainKills: 0, shieldBreaks: 0, arrowHits: 0, downs: 0 },
   };
 }
 
@@ -101,21 +107,34 @@ export function createRunShell(heroes: Hero[], localHero: number): Run {
     // arena effects
     safeZone: null,
     result: null,
+    mapId: DEFAULT_MAP, mapLevel: 1, hazards: [],
   };
   attachHeroAccessors(shell);
   return shell as unknown as Run;
 }
 
 /** Start a fresh single-player run with the given class id and switch to play. */
-/** Start a solo run, wearing this player's equipped accessories. */
+/** Start a solo run on the selected map, wearing this player's equipped accessories. */
 export function newRun(classId: string): void {
-  newRunWith([{ classId, accessories: equippedLoadout() }], 0);
+  newRunWith([{ classId, accessories: equippedLoadout(), slayer: slayerTiers() }], 0, selectedMap());
 }
 
-/** Start a fresh run for these players. `localHero` is the one this screen follows. */
-export function newRunWith(specs: HeroSpec[], localHero: number): void {
+/** Which map and level a run is played on. */
+export interface MapChoice {
+  mapId: string;
+  level: number;
+}
+
+/**
+ * Start a fresh run for these players. `localHero` is the one this screen follows.
+ * Without a `map`, it's the Whispering Forest at level 1 (tests and bots).
+ */
+export function newRunWith(specs: HeroSpec[], localHero: number, map?: MapChoice): void {
   const heroes = specs.map((spec, i) => createHero(i, spec, specs.length));
   setRun(createRunShell(heroes, localHero));
+  run.mapId = mapDef(map?.mapId ?? DEFAULT_MAP).id;
+  run.mapLevel = Math.max(1, Math.min(MAX_MAP_LEVEL, Math.floor(map?.level ?? 1)));
+  setUpMap();
   clearLastUnlocked();
   for (const hero of heroes) {
     withHero(hero, () => {
@@ -138,6 +157,9 @@ export function runRecord(r: Run, hero: Hero, win: boolean): RunRecord {
   return {
     classId: hero.classId, wavesCleared: r.wavesCleared, bossesKilled: r.bossesKilled, win,
     kills: r.kills, myKills: hero.score.kills, time: r.result?.time ?? r.time, players: r.heroes.length,
+    className: hero.cls.name, revives: hero.score.revives, tally: hero.tally,
+    cards: Object.keys(hero.cards), evolved: Object.keys(hero.cards).filter((id) => hero.cards[id].evolved),
+    mapId: r.mapId, mapLevel: r.mapLevel, teamDowns: r.heroes.reduce((n, h) => n + h.tally.downs, 0),
   };
 }
 

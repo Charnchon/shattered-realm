@@ -12,7 +12,8 @@ import { endRun, newRunWith, runRecord } from '../game/run';
 import { applyPick, tryReroll } from '../progression/cards';
 import { joinButtons, levelCardRects, lobbyButtons, rerollButtonRect, resultButtons } from '../render/screens';
 import { ageVisualEffects } from '../world/effects';
-import { clearLastUnlocked, equippedLoadout, isClassUnlocked, recordRun, unlockText } from '../meta/progress';
+import { clearLastUnlocked, equippedLoadout, isClassUnlocked, recordRun, selectedMap, slayerTiers, unlockText } from '../meta/progress';
+import { cleanSlayer } from '../meta/goals';
 import { cleanLoadout, type EquippedAccessory } from '../meta/accessories';
 import { isPredicting, nextInputSeq, placeLocalHero, predictLocalHero, reconcile, resetPrediction } from './prediction';
 import { decodeSnapshot, encodeSnapshot, parseMessage, type Snapshot } from './snapshot';
@@ -28,6 +29,8 @@ export interface LobbyEntry {
   classId: string;
   /** The accessories this player brings (checked with `cleanLoadout` on the host). */
   accessories?: EquippedAccessory[];
+  /** Their Slayer tiers (checked with `cleanSlayer` on the host). */
+  slayer?: Record<string, number>;
   /** Left during a run; dropped when the lobby is next shown. */
   left?: boolean;
 }
@@ -35,6 +38,8 @@ export interface LobbyEntry {
 /** What the screens need to know about the online session. */
 export const net = {
   mode: 'offline' as 'offline' | 'host' | 'client',
+  /** The map and level the host picked (shown in the lobby). */
+  map: { mapId: 'forest', level: 1 },
   code: '',
   /** Status or error line shown on the lobby and join screens. */
   status: '',
@@ -92,7 +97,7 @@ export function hostGame(classId: string, openNetwork = true): void {
   reset();
   net.mode = 'host';
   net.code = randomRoomCode();
-  net.players = [{ name: nameFor(0), classId: playableClass(classId), accessories: equippedLoadout() }];
+  net.players = [{ name: nameFor(0), classId: playableClass(classId), accessories: equippedLoadout(), slayer: slayerTiers() }];
   remotes = [null];
   net.notice = '';
   setScene(SCENE.LOBBY);
@@ -123,7 +128,7 @@ export function acceptConnection(conn: Conn): void {
 }
 
 function onClientMessage(conn: Conn, msg: ReturnType<typeof parseMessage>): void {
-  if (msg.t === 'hello') { addPlayer(conn, String(msg.classId), cleanLoadout(msg.accessories)); return; }
+  if (msg.t === 'hello') { addPlayer(conn, String(msg.classId), cleanLoadout(msg.accessories), cleanSlayer(msg.slayer)); return; }
   const slot = remotes.indexOf(conn);
   if (slot <= 0) return;
   switch (msg.t) {
@@ -155,11 +160,11 @@ function onClientMessage(conn: Conn, msg: ReturnType<typeof parseMessage>): void
   }
 }
 
-function addPlayer(conn: Conn, classId: string, accessories: EquippedAccessory[]): void {
+function addPlayer(conn: Conn, classId: string, accessories: EquippedAccessory[], slayer: Record<string, number>): void {
   if (remotes.includes(conn)) return;
   if (scene !== SCENE.LOBBY) { kick(conn, 'That game has already started.'); return; }
   if (net.players.length >= MAX_PLAYERS) { kick(conn, 'That room is full (' + MAX_PLAYERS + ' players).'); return; }
-  net.players.push({ name: nameFor(net.players.length), classId: CLASSES[classId] ? classId : CLASS_ORDER[0], accessories });
+  net.players.push({ name: nameFor(net.players.length), classId: CLASSES[classId] ? classId : CLASS_ORDER[0], accessories, slayer });
   remotes.push(conn);
   broadcastLobby();
 }
@@ -194,14 +199,15 @@ function compactLobby(): void {
 }
 
 function broadcastLobby(): void {
-  remotes.forEach((conn, slot) => send(conn, { t: 'lobby', code: net.code, players: net.players, you: slot }));
+  net.map = selectedMap(); // the host's pick
+  remotes.forEach((conn, slot) => send(conn, { t: 'lobby', code: net.code, players: net.players, you: slot, map: net.map }));
 }
 
 /** Host: start the run for everyone in the lobby. */
 export function startOnlineGame(): void {
   compactLobby();
   broadcastLobby();
-  newRunWith(net.players.map((p) => ({ classId: p.classId, name: p.name, accessories: cleanLoadout(p.accessories) })), 0);
+  newRunWith(net.players.map((p) => ({ classId: p.classId, name: p.name, accessories: cleanLoadout(p.accessories), slayer: cleanSlayer(p.slayer) })), 0, selectedMap());
   net.menuOpen = false;
   snapshotTimer = 0;
 }
@@ -261,7 +267,7 @@ export function connectToHost(conn: Conn, classId: string): void {
     try { onHostMessage(parseMessage(text)); } catch (err) { console.error('bad message from the host', err); }
   });
   conn.onClose(() => { if (net.mode === 'client') leaveOnline('Lost the connection to the host (they may have left the room).'); });
-  send(conn, { t: 'hello', classId, accessories: equippedLoadout() }); // the host checks them
+  send(conn, { t: 'hello', classId, accessories: equippedLoadout(), slayer: slayerTiers() }); // the host checks them
 }
 
 function onHostMessage(msg: ReturnType<typeof parseMessage>): void {
@@ -269,6 +275,7 @@ function onHostMessage(msg: ReturnType<typeof parseMessage>): void {
     case 'lobby':
       net.players = msg.players as LobbyEntry[];
       net.you = Number(msg.you);
+      if (msg.map && typeof msg.map === 'object') net.map = msg.map as typeof net.map;
       net.code = String(msg.code);
       net.status = '';
       if (scene !== SCENE.LOBBY) setScene(SCENE.LOBBY);

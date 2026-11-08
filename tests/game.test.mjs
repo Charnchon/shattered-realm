@@ -595,3 +595,36 @@ test('high scores: H opens the panel on the menu; a click closes it without star
   sr.update(1 / 60);
   assert.equal(sr.scene, 'play', 'once closed, the menu works again');
 });
+
+test('run counters: interrupts, dazed hits, imp chain kills, shield breaks and arrow hits are credited to the player', () => {
+  const { sr } = quietArena('traveler');
+  sr.DEBUG.god = false;
+  const p = sr.run.player, t = sr.run.hero.tally;
+  // interrupt a healer's channel
+  const healer = sr.spawnEnemy('cultist', p.x + 330, p.y, false);
+  const hurt = sr.spawnEnemy('orc', p.x + 370, p.y + 30, false);
+  hurt.hp = hurt.maxHp / 2; hurt.speed = 0; healer.attackTimer = 0.05;
+  stepFor(sr, 0.2);
+  sr.hitEnemy(healer, 1);
+  sr.step(1 / 60);
+  assert.equal(t.interrupts, 1);
+  // break the orc's shield with a heavy hit
+  sr.hitEnemy(hurt, 1, { heavy: true });
+  assert.equal(t.shieldBreaks, 1);
+  // hit a dazed boar
+  const boar = sr.spawnEnemy('boar', p.x - 300, p.y, false);
+  boar.dazedTime = 1;
+  sr.hitEnemy(boar, 1);
+  assert.equal(t.dazedHits, 1);
+  // an imp's blast kills its neighbour
+  const imp = sr.spawnEnemy('imp', p.x, p.y + 300, false), bat = sr.spawnEnemy('bat', p.x + 20, p.y + 300, false);
+  bat.hp = 1;
+  sr.hitEnemy(imp, 1e9);
+  assert.equal(t.impChainKills, 1);
+  assert.ok(t.killsByType.imp >= 1 && t.killsByType.bat >= 1, 'kills by monster type');
+  // an arrow that hurts
+  const archer = sr.spawnEnemy('archer', p.x + 250, p.y, false);
+  archer.attackTimer = 0.05;
+  for (let i = 0; i < 120 && t.arrowHits === 0; i++) { p.iframes = 0; sr.step(1 / 60); }
+  assert.equal(t.arrowHits, 1);
+});

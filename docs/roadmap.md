@@ -69,10 +69,10 @@ The engine everything else builds on.
 
 **Goal:** variety between runs (plan section 5).
 
-- ⬜ Map select screen; maps unlock in order
-- ⬜ First 3 maps with their modifier and reward multiplier (Whispering Forest, Sunken Crypt, Frostpeak Pass)
+- ✅ Map select (M on class select); maps unlock in order (wave 6 on the previous map, or gold)
+- ✅ 5 maps with their modifier and reward multiplier (Forest, Crypt, Grotto, Ember Wastes, Bloodmoon); map levels 1–10
 - ⬜ Obstacles and per-map enemy recolours
-- ⬜ Remaining 7 maps
+- ⬜ Remaining 5 maps (Frostpeak, Clockwork, Carnival, Sky Ruins, Void Rift)
 
 **Done when:** picking a map changes how a run plays, not just its colours.
 

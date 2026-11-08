@@ -215,11 +215,11 @@ Each step ships on its own, is data-first (tables, not new systems where possibl
 |---|---|---|
 | **A. Foundation** ✅ | Save v2 + migration; persistent gold and class EXP/levels with the new formulas; the rewards reel and "next goal" teaser on the result screen | Makes every run pay immediately |
 | **B. Loot and loadout** ✅ | 8 accessories (Lv 1–3); final-boss drop per player; duplicates level up; 3-slot loadout on class select; gold upgrades; gold prices for class unlocks | The reward for winning, and gold has a use |
-| **C. Goals** | Bounties (3 active) + first-time milestones; run counters for monster mechanics | Always a next goal; teaches weaknesses |
-| **D. Collection** | Slayer achievements (+1–5% per monster type); Codex: cards/evolutions, bestiary | Long-term pull, cheap to build |
+| **C. Goals** ✅ | Bounties (3 active) + first-time milestones; run counters for monster mechanics | Always a next goal; teaches weaknesses |
+| **D. Collection** ✅ | Slayer achievements (+1–5% per monster type); Codex: cards/evolutions, bestiary | Long-term pull, cheap to build |
 | **E. Builds** | Run Builds (2 per core class), unlocked by Specialist level, chosen on class select | Medium-term unlocks |
 | **F. Skill trees** | Core 4, tiers 1–3 first, then 4–6 | The main meta system (~22% power) |
-| **G. Maps + map levels** | Map select, maps 2–3, mastery stars, map levels 1–10 per map | Endgame |
+| **G. Maps + map levels** ✅ (5 maps) | Map select, maps 2–3, mastery stars, map levels 1–10 per map | Endgame |
 | **H. Later** | Remaining accessories and maps, cosmetics, daily run, online leaderboard, achievements | Polish and long tail |
 
 ## 10. Decisions (November 2026)
