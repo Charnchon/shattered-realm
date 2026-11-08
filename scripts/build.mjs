@@ -20,6 +20,8 @@ const options = {
   target: 'es2022',
   charset: 'utf8',
   banner: { js: '"use strict";' },
+  // images in assets/ are inlined, so index.html stays one self-contained file
+  loader: { '.png': 'dataurl' },
   logLevel: 'warning',
   plugins: [{
     name: 'inline-into-html',

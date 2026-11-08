@@ -13,6 +13,7 @@ function stubContext(counter) {
   const known = {
     measureText: (s) => ({ width: String(s).length * 7 }),
     createLinearGradient: () => ({ addColorStop() {} }),
+    drawImage: (...args) => { counter.drawCalls++; counter.images.push(args.slice(1, 5)); },
   };
   return new Proxy(known, {
     get: (target, key) => (key in target ? target[key] : () => { counter.drawCalls++; }),
@@ -31,9 +32,32 @@ const SEEDED_RANDOM = (seed) => `(() => {
   };
 })();`;
 
-/** Load a fresh game instance. Returns the window.__SR test API plus helpers. */
-export function loadGame({ seed = 1 } = {}) {
-  const counter = { drawCalls: 0 };
+/** An Image stand-in that "loads" as soon as its src is set (for testing sprite drawing). */
+class FakeImage {
+  set src(value) { this._src = value; if (this.onload) this.onload(); }
+  get src() { return this._src; }
+}
+
+/**
+ * A localStorage stand-in backed by a plain object (`data`), so tests can read, preload and share saves.
+ * Two games given the same storage behave like two tabs of one browser.
+ */
+export function fakeStorage(data = {}) {
+  return {
+    data,
+    getItem: (k) => (k in data ? data[k] : null),
+    setItem: (k, v) => { data[k] = String(v); },
+    removeItem: (k) => { delete data[k]; },
+  };
+}
+
+/**
+ * Load a fresh game instance. Returns the window.__SR test API plus helpers.
+ * `images: true` gives the sandbox a fake Image, so sprites draw instead of falling back to circles.
+ * `storage` (from `fakeStorage`) gives it a localStorage; without one, progress lives in memory.
+ */
+export function loadGame({ seed = 1, images = false, storage = null } = {}) {
+  const counter = { drawCalls: 0, images: [] };
   const canvas = { getContext: () => stubContext(counter), addEventListener() {}, style: {}, width: 0, height: 0 };
   const sandbox = {
     console,
@@ -41,6 +65,8 @@ export function loadGame({ seed = 1 } = {}) {
     requestAnimationFrame: () => 0,
     setTimeout: () => 0,
     clearTimeout: () => {},
+    ...(images ? { Image: FakeImage } : {}),
+    ...(storage ? { localStorage: storage } : {}),
     document: { getElementById: () => canvas },
     window: { addEventListener() {}, innerWidth: 960, innerHeight: 540, devicePixelRatio: 1 },
   };

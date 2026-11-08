@@ -6,7 +6,7 @@ import { livingHeroes, nearestHero, partyScale, run, showBanner, withHero } from
 import { hurtHero, hurtPlayer } from './combat';
 import { addFloatingText, addTelegraph, schedule, spawnBurst, spawnSlash } from './effects';
 import { createStatusTimers, spawnEnemy } from './enemies';
-import { dropGem } from './pickups';
+import { BOSS_HEAL_ORB, BOSS_HEAL_ORBS, dropCoin, dropGem } from './pickups';
 import { fireEnemyShot } from './projectiles';
 import { completeWave } from './waves';
 import { addZone } from './zones';
@@ -25,12 +25,12 @@ export interface BossDef {
   unlocksCardSlot?: boolean;
 }
 
-/** Bosses, keyed by the wave they appear on. */
+/** Bosses, keyed by the wave they appear on. HP raised 1.5x (Nov 2026 playtest: bosses died too fast). */
 export const BOSS_DEFS: Record<number, BossDef> = {
-  3: { kind: 'troll', name: 'Thornback Troll', hp: 900, r: 30, damage: 14, color: '#7f9a4e', speed: 70, undead: false },
-  6: { kind: 'colossus', name: 'Bone Colossus', hp: 2400, r: 36, damage: 18, color: '#d8d0b8', speed: 45, undead: true, unlocksCardSlot: true },
-  9: { kind: 'wyvern', name: 'Crimson Wyvern', hp: 3200, r: 30, damage: 20, color: '#c2334a', speed: 0, undead: false },
-  12: { kind: 'king', name: 'The Hollow King', hp: 6500, r: 28, damage: 24, color: '#8e7fb0', speed: 80, undead: true },
+  3: { kind: 'troll', name: 'Thornback Troll', hp: 1350, r: 30, damage: 14, color: '#7f9a4e', speed: 70, undead: false },
+  6: { kind: 'colossus', name: 'Bone Colossus', hp: 3600, r: 36, damage: 18, color: '#d8d0b8', speed: 45, undead: true, unlocksCardSlot: true },
+  9: { kind: 'wyvern', name: 'Crimson Wyvern', hp: 4800, r: 30, damage: 20, color: '#c2334a', speed: 0, undead: false },
+  12: { kind: 'king', name: 'The Hollow King', hp: 9750, r: 28, damage: 24, color: '#8e7fb0', speed: 80, undead: true },
 };
 
 const BOSS_TELEGRAPH_COLOR = COLOR.ember;
@@ -72,6 +72,7 @@ export function onBossDefeated(e: Boss): void {
   run.safeZone = null;
   const gemValue = 6 * (1 + 0.3 * (run.wave - 1));
   for (let i = 0; i < 14; i++) dropGem(e.x + randRange(-50, 50), e.y + randRange(-50, 50), gemValue, true);
+  for (let i = 0; i < BOSS_HEAL_ORBS; i++) dropCoin(e.x + randRange(-40, 40), e.y + randRange(-40, 40), BOSS_HEAL_ORB, 'heal');
   spawnBurst(e.x, e.y, e.color, 40, 240);
   run.shake = 10;
   if (e.unlocksCardSlot) {

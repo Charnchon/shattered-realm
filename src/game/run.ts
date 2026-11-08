@@ -3,7 +3,8 @@ import type { Hero, HeroInput, Player, Run, Stats } from '../types';
 import { ARENA_H, ARENA_W, SCENE } from '../core/constants';
 import { DEBUG, localHero, recalcStats, run, setRun, setScene, withHero } from '../core/state';
 import { CLASSES } from '../classes/registry';
-import { clearLastUnlocked, recordRun } from '../meta/progress';
+import { clearLastUnlocked, equippedLoadout, previewRun, recordRun, type RunRecord } from '../meta/progress';
+import type { EquippedAccessory } from '../meta/accessories';
 import { spawnEnemy } from '../world/enemies';
 import { findSpawnPosition, startWave } from '../world/waves';
 
@@ -18,6 +19,8 @@ export interface HeroSpec {
   name?: string;
   /** Played by the test bot. */
   bot?: boolean;
+  /** Equipped accessories (already checked with `cleanLoadout`). */
+  accessories?: EquippedAccessory[];
 }
 
 /**
@@ -76,6 +79,8 @@ export function createHero(idx: number, spec: HeroSpec, count: number): Hero {
     input: { ...emptyInput(), aimX: x + 100, aimY: y },
     bot: !!spec.bot,
     down: false, revive: 0, gone: false,
+    score: { kills: 0, damage: 0, taken: 0, revives: 0 },
+    accessories: spec.accessories ?? [],
   };
 }
 
@@ -102,8 +107,9 @@ export function createRunShell(heroes: Hero[], localHero: number): Run {
 }
 
 /** Start a fresh single-player run with the given class id and switch to play. */
+/** Start a solo run, wearing this player's equipped accessories. */
 export function newRun(classId: string): void {
-  newRunWith([{ classId }], 0);
+  newRunWith([{ classId, accessories: equippedLoadout() }], 0);
 }
 
 /** Start a fresh run for these players. `localHero` is the one this screen follows. */
@@ -127,16 +133,21 @@ export function newRunWith(specs: HeroSpec[], localHero: number): void {
   setScene(SCENE.PLAY);
 }
 
-/** Finish the run and show the result screen. Rewards feed future meta-progression. */
+/** What gets saved about a finished run, for one player (`hero`, usually this screen's). */
+export function runRecord(r: Run, hero: Hero, win: boolean): RunRecord {
+  return {
+    classId: hero.classId, wavesCleared: r.wavesCleared, bossesKilled: r.bossesKilled, win,
+    kills: r.kills, myKills: hero.score.kills, time: r.result?.time ?? r.time, players: r.heroes.length,
+  };
+}
+
+/** Finish the run and show the result screen with this screen's player's rewards. */
 export function endRun(win: boolean): void {
   if (run.result) return;
-  const gold = Math.round(10 * run.wavesCleared + 50 * run.bossesKilled + (win ? 150 : 0));
-  const exp = 20 * run.wavesCleared + 80 * run.bossesKilled + (win ? 200 : 0);
-  run.result = { win, gold, exp, time: run.time };
-  // save this screen's player's progress (test mode and bot runs don't count)
-  const me = localHero();
-  if (!DEBUG.god && !DEBUG.bot && !me.bot) {
-    recordRun({ classId: me.classId, wavesCleared: run.wavesCleared, bossesKilled: run.bossesKilled, win });
-  }
+  run.result = { win, time: run.time };
+  // save this screen's player's progress; test mode and bot runs only preview what they would have earned
+  const me = localHero(), record = runRecord(run, me, win);
+  if (!DEBUG.god && !DEBUG.bot && !me.bot) recordRun(record);
+  else previewRun(record);
   setScene(SCENE.RESULT);
 }

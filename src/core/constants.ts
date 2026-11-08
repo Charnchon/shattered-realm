@@ -31,8 +31,10 @@ export const COLOR = {
   barBg: '#2a1f33',
 } as const;
 
-export const FONT_PIXEL = '"Pixelify Sans","Courier New",monospace';
-export const FONT_BODY = 'Rubik,Arial,sans-serif';
+/** Headings and big numbers: a tall, clean pixel font (Google Fonts, loaded in shell.html). */
+export const FONT_PIXEL = '"Jersey 10","Pixelify Sans","Courier New",monospace';
+/** Everything else, and all small text: rounded and easy to read. */
+export const FONT_BODY = 'Nunito,Arial,sans-serif';
 
 export interface Rarity {
   color: string;

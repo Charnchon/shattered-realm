@@ -19,7 +19,7 @@ const MAX_ZONES = 160;
 
 /** [id, type, x, y, face, hpFrac, flags, r] */
 type PackedMob = [number, number, number, number, number, number, number, number];
-const FLAG = { elite: 1, flash: 2, charm: 4, root: 8, shieldBroken: 16, toughBar: 32 } as const;
+const FLAG = { elite: 1, flash: 2, charm: 4, root: 8, shieldBroken: 16, toughBar: 32, phased: 64, dazed: 128 } as const;
 /** [x, y, vx, vy, r, color, kind] */
 type PackedShot = [number, number, number, number, number, string, string];
 /** [kind, x, y, r, life, color, currentR, t] */
@@ -46,6 +46,8 @@ export interface HeroSnap {
   allies: Hero['allies'];
   classState: unknown;
   ack?: number;
+  score: Hero['score'];
+  accessories: Hero['accessories'];
 }
 
 export interface Snapshot {
@@ -98,6 +100,8 @@ function packMob(e: Mob): PackedMob {
   if (e.rootTime > 0) flags |= FLAG.root;
   if (e.shieldBroken) flags |= FLAG.shieldBroken;
   if (e.maxHp > 30) flags |= FLAG.toughBar;
+  if (e.phased) flags |= FLAG.phased;
+  if ((e.dazedTime ?? 0) > 0) flags |= FLAG.dazed;
   return [e.id, TYPE_IDS.indexOf(e.type), r1(e.x), r1(e.y), e.face, e.hp / e.maxHp, flags, e.r];
 }
 
@@ -119,7 +123,7 @@ function snapHero(h: Hero): HeroSnap {
     idx: h.idx, name: h.name, classId: h.classId, down: h.down, revive: h.revive, gone: h.gone,
     player: h.player, stats: h.stats, cardSlots: h.cardSlots, cards: h.cards, relics: h.relics, statCards: h.statCards,
     pendingLevelUps: h.pendingLevelUps, offer: h.offer, rerolls: h.rerolls, coinsHeld: h.coinsHeld,
-    magnetAllTime: h.magnetAllTime, allies: h.allies, classState: h.classState, ack: h.ack,
+    magnetAllTime: h.magnetAllTime, allies: h.allies, classState: h.classState, ack: h.ack, score: h.score, accessories: h.accessories,
   };
 }
 
@@ -167,6 +171,8 @@ function unpackMob(m: PackedMob): Mob {
     charmTime: flags & FLAG.charm ? 1 : 0,
     rootTime: flags & FLAG.root ? 1 : 0,
     shieldBroken: !!(flags & FLAG.shieldBroken),
+    phased: !!(flags & FLAG.phased),
+    dazedTime: flags & FLAG.dazed ? 1 : 0,
     hasShield: !!ENEMY_TYPES[type].shield,
     boss: false, dead: false, undead: false, speed: 0, damage: 0, xp: 0, contactCooldown: 0,
     knockX: 0, knockY: 0, attackTimer: 0, wobble: 0,

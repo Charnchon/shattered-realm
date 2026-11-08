@@ -45,30 +45,30 @@ interface BountyState {
 const state = (): BountyState => run.classState as BountyState;
 
 const BOUNTY_CARDS: CardDef[] = [
-  { id: 'keen_eye', name: 'Keen Eye', part: 'passive', desc: 'Marked prey takes +25% more damage, and marks last longer.', ups: ['effect', 'duration'] },
-  { id: 'twin_arrows', name: 'Twin Arrows', part: 'strike', desc: 'Shoot 2 arrows at once.', ups: ['projectiles', 'damage'] },
+  { id: 'keen_eye', name: 'Keen Eye', part: 'passive', desc: 'Marked enemies take 25% more damage from you, and marks last 50% longer.', ups: ['effect', 'duration'] },
+  { id: 'twin_arrows', name: 'Twin Arrows', part: 'strike', desc: 'Shoot 2 arrows with every attack.', ups: ['projectiles', 'damage'] },
   { id: 'piercing_arrows', name: 'Piercing Arrows', part: 'strike', desc: 'Arrows pass through 2 more enemies and fly farther.', ups: ['damage', 'range'] },
-  { id: 'quick_nock', name: 'Quick Nock', part: 'strike', desc: 'Shoot 25% faster.', ups: ['speed'] },
-  { id: 'barbed_mark', name: 'Barbed Mark', part: 'heavy', desc: 'Mark Prey also makes the target bleed.', ups: ['damage', 'duration'] },
-  { id: 'spread_mark', name: 'Spread Mark', part: 'heavy', desc: 'Mark Prey fires 3 arrows and can mark 3 enemies.', ups: ['projectiles', 'damage'] },
-  { id: 'pinning_shot', name: 'Pinning Shot', part: 'heavy', desc: 'Mark Prey pins the target in place for 1.5 s.', ups: ['duration', 'range'] },
-  { id: 'swoop_guard', name: 'Swoop Guard', part: 'dash', desc: 'When you dash, your falcon swoops through enemies around you.', ups: ['damage', 'range'] },
+  { id: 'quick_nock', name: 'Quick Nock', part: 'strike', desc: 'Shoot arrows 25% faster.', ups: ['speed'] },
+  { id: 'barbed_mark', name: 'Barbed Mark', part: 'heavy', desc: 'Marked enemies also bleed, taking damage for 4 s.', ups: ['damage', 'duration'] },
+  { id: 'spread_mark', name: 'Spread Mark', part: 'heavy', desc: 'Mark Prey fires 3 arrows, so you can mark 3 enemies at once.', ups: ['projectiles', 'damage'] },
+  { id: 'pinning_shot', name: 'Pinning Shot', part: 'heavy', desc: 'Marked enemies are pinned in place for 1.5 s.', ups: ['duration', 'range'] },
+  { id: 'swoop_guard', name: 'Swoop Guard', part: 'dash', desc: 'When you dash, Kestrel swoops around you and hits every nearby enemy.', ups: ['damage', 'range'] },
   { id: 'feather_fall', name: 'Feather Fall', part: 'dash', desc: 'After a dash, your next 3 arrows deal double damage.', ups: ['damage', 'effect'] },
-  { id: 'wind_step', name: 'Wind Step', part: 'dash', desc: 'Dash cooldown −20%. +1 charge at Lv5.', ups: ['speed'] },
-  { id: 'long_hunt', name: 'Long Hunt', part: 'ultimate', desc: 'Sky Hunt lasts 3 s longer and dives hit harder.', ups: ['damage', 'duration'] },
-  { id: 'talon_storm', name: 'Talon Storm', part: 'ultimate', desc: 'More falcons join the Sky Hunt.', ups: ['projectiles', 'speed'] },
-  { id: 'feather_rain', name: 'Feather Rain', part: 'ultimate', desc: 'When Sky Hunt ends, sharp feathers rain around you.', ups: ['damage', 'range'] },
+  { id: 'wind_step', name: 'Wind Step', part: 'dash', desc: 'Feather Step recharges 20% faster. At Lv5, gain a 2nd dash.', ups: ['speed'] },
+  { id: 'long_hunt', name: 'Long Hunt', part: 'ultimate', desc: 'Sky Hunt lasts 3 s longer, and its falcons hit 30% harder.', ups: ['damage', 'duration'] },
+  { id: 'talon_storm', name: 'Talon Storm', part: 'ultimate', desc: 'More falcons join Sky Hunt, so they dive more often.', ups: ['projectiles', 'speed'] },
+  { id: 'feather_rain', name: 'Feather Rain', part: 'ultimate', desc: 'When Sky Hunt ends, sharp feathers burst out and hit everything around you.', ups: ['damage', 'range'] },
   {
-    id: 'second_falcon', name: 'Second Falcon', part: 'wild', desc: 'Another falcon joins you.', ups: ['damage', 'speed', 'projectiles'],
+    id: 'second_falcon', name: 'Second Falcon', part: 'wild', desc: 'A second falcon joins Kestrel and attacks with it.', ups: ['damage', 'speed', 'projectiles'],
     evo: { name: 'Falcon Pair', desc: 'Your falcons dive twice as often and hit 50% harder.', need: { part: 'ultimate' }, needText: 'any Ultimate card' },
   },
   {
-    id: 'volley', name: 'Volley', part: 'wild', desc: 'Every 6 s, arrows rain on the biggest group of enemies.', ups: ['damage', 'projectiles', 'speed'],
-    evo: { name: 'Arrow Storm', desc: 'Twice the arrows, every 3 s.', need: { card: 'twin_arrows' }, needText: 'Twin Arrows card' },
+    id: 'volley', name: 'Volley', part: 'wild', desc: 'Every 6 s, a rain of arrows hits the biggest group of enemies near you.', ups: ['damage', 'projectiles', 'speed'],
+    evo: { name: 'Arrow Storm', desc: 'Twice as many arrows, every 3 s.', need: { card: 'twin_arrows' }, needText: 'Twin Arrows card' },
   },
   {
-    id: 'feather_fetch', name: 'Feather Fetch', part: 'wild', desc: 'Falcons fetch from farther, and sometimes bring back a heal orb.', ups: ['heal', 'range'],
-    evo: { name: 'Golden Feather', desc: 'Heal orbs come twice as often and heal double.', need: { relic: 'magnet' }, needText: 'Magnet Stone relic' },
+    id: 'feather_fetch', name: 'Feather Fetch', part: 'wild', desc: 'Your falcons grab gems from farther away, and every 12 s bring back a heal orb.', ups: ['heal', 'range'],
+    evo: { name: 'Golden Feather', desc: 'A heal orb every 6 s, healing double.', need: { relic: 'magnet' }, needText: 'Magnet Stone relic' },
   },
 ];
 
@@ -89,6 +89,7 @@ registerClass({
     'Passive: Hawk Eye, +50% damage to marked prey',
   ],
   keys: { lmb: 'Bow', rmb: 'Mark', spc: 'Step', q: 'Hunt' },
+  abilities: { strike: 'Shortbow', heavy: 'Mark Prey', dash: 'Feather Step', ultimate: 'Sky Hunt', passive: 'Hawk Eye' },
   favoredParts: ['strike', 'heavy'],
   cards: BOUNTY_CARDS,
 

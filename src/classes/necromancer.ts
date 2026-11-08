@@ -57,30 +57,30 @@ interface NecroState {
 const state = (): NecroState => run.classState as NecroState;
 
 const NECRO_CARDS: CardDef[] = [
-  { id: 'restless_graves', name: 'Restless Graves', part: 'passive', desc: '+1 max skeleton; temporary skeletons rise more often.', ups: ['projectiles', 'effect'] },
-  { id: 'sharpened_spears', name: 'Sharpened Spears', part: 'strike', desc: 'Skeleton attacks hit 30% harder and reach farther.', ups: ['damage', 'range'] },
-  { id: 'phalanx', name: 'Phalanx', part: 'strike', desc: 'Skeleton thrusts become wide sweeps.', ups: ['range', 'damage'] },
+  { id: 'restless_graves', name: 'Restless Graves', part: 'passive', desc: '+1 max skeleton, and enemies you kill rise as temporary skeletons more often.', ups: ['projectiles', 'effect'] },
+  { id: 'sharpened_spears', name: 'Sharpened Spears', part: 'strike', desc: 'Skeleton attacks deal 30% more damage and reach farther.', ups: ['damage', 'range'] },
+  { id: 'phalanx', name: 'Phalanx', part: 'strike', desc: 'Skeletons sweep wide instead of thrusting, so they hit more enemies.', ups: ['range', 'damage'] },
   { id: 'quick_orders', name: 'Quick Orders', part: 'strike', desc: 'Skeletons attack 33% faster.', ups: ['speed'] },
-  { id: 'trampling_march', name: 'Trampling March', part: 'heavy', desc: 'The March hits much harder and knocks enemies aside.', ups: ['damage', 'range'] },
+  { id: 'trampling_march', name: 'Trampling March', part: 'heavy', desc: 'Marching skeletons deal much more damage and push enemies aside.', ups: ['damage', 'range'] },
   { id: 'grave_rush', name: 'Grave Rush', part: 'heavy', desc: 'Skeletons march faster and land with a shockwave.', ups: ['speed', 'damage'] },
-  { id: 'dread_march', name: 'Dread March', part: 'heavy', desc: 'Enemies the March passes through are slowed.', ups: ['duration', 'range'] },
-  { id: 'spiked_grave', name: 'Spiked Grave', part: 'dash', desc: 'Grave Step leaves bone spikes where you land.', ups: ['damage', 'range', 'duration'] },
+  { id: 'dread_march', name: 'Dread March', part: 'heavy', desc: 'Enemies that marching skeletons pass through are slowed.', ups: ['duration', 'range'] },
+  { id: 'spiked_grave', name: 'Spiked Grave', part: 'dash', desc: 'Grave Step leaves bone spikes where you land that hurt enemies.', ups: ['damage', 'range', 'duration'] },
   { id: 'long_leash', name: 'Long Leash', part: 'dash', desc: 'Grave Step can reach skeletons much farther away.', ups: ['range'] },
-  { id: 'bone_shield', name: 'Bone Shield', part: 'dash', desc: 'After dashing, a bone shield blocks 1 hit.', ups: ['duration', 'effect'] },
-  { id: 'grand_army', name: 'Grand Army', part: 'ultimate', desc: 'Army of the Dead raises 4 more skeletons for longer.', ups: ['projectiles', 'duration'] },
-  { id: 'bone_giants', name: 'Bone Giants', part: 'ultimate', desc: '3 of the army are big brutes with heavy hits.', ups: ['damage', 'effect'] },
-  { id: 'last_rites', name: 'Last Rites', part: 'ultimate', desc: 'When the army ends, heal for each skeleton.', ups: ['heal'] },
+  { id: 'bone_shield', name: 'Bone Shield', part: 'dash', desc: 'After Grave Step, a bone shield blocks the next hit.', ups: ['duration', 'effect'] },
+  { id: 'grand_army', name: 'Grand Army', part: 'ultimate', desc: 'Army of the Dead raises 4 more skeletons, and they last longer.', ups: ['projectiles', 'duration'] },
+  { id: 'bone_giants', name: 'Bone Giants', part: 'ultimate', desc: '3 skeletons of the raised army are big brutes with heavy hits.', ups: ['damage', 'effect'] },
+  { id: 'last_rites', name: 'Last Rites', part: 'ultimate', desc: 'When Army of the Dead ends, heal for each skeleton it raised.', ups: ['heal'] },
   {
-    id: 'corpse_explosion', name: 'Corpse Explosion', part: 'wild', desc: '30% of corpses explode.', ups: ['damage', 'range'],
-    evo: { name: 'Chain Detonation', desc: 'Every corpse explodes, and explosions chain.', need: { part: 'heavy' }, needText: 'any Heavy Strike card' },
+    id: 'corpse_explosion', name: 'Corpse Explosion', part: 'wild', desc: '30% of the enemies you kill explode, hurting enemies around them.', ups: ['damage', 'range'],
+    evo: { name: 'Chain Detonation', desc: 'Every corpse explodes, and explosions set off more explosions.', need: { part: 'heavy' }, needText: 'any Heavy Strike card' },
   },
   {
     id: 'bone_armor', name: 'Bone Armor', part: 'wild', desc: '+2 armor for each skeleton near you.', ups: ['effect', 'duration'],
-    evo: { name: 'Ossified', desc: 'Double armor per skeleton.', need: { relic: 'buckle' }, needText: 'Iron Buckle relic' },
+    evo: { name: 'Ossified', desc: 'Double the armor for each skeleton.', need: { relic: 'buckle' }, needText: 'Iron Buckle relic' },
   },
   {
-    id: 'wraith', name: 'Wraith', part: 'wild', desc: 'A wraith flies through enemies and drains them.', ups: ['damage', 'heal', 'speed'],
-    evo: { name: 'Banshee', desc: '2 wraiths, and a scream scares enemies every 5 s.', need: { part: 'dash' }, needText: 'any Dash card' },
+    id: 'wraith', name: 'Wraith', part: 'wild', desc: 'A wraith flies through enemies and drains their life.', ups: ['damage', 'heal', 'speed'],
+    evo: { name: 'Banshee', desc: '2 wraiths, and every 5 s a scream scares enemies away.', need: { part: 'dash' }, needText: 'any Dash card' },
   },
 ];
 
@@ -104,6 +104,7 @@ registerClass({
     'Passive: kills can raise a temporary skeleton',
   ],
   keys: { lmb: 'Attack', rmb: 'March', spc: 'Grave', q: 'Army' },
+  abilities: { strike: 'Skeleton Attack', heavy: 'Command: March', dash: 'Grave Step', ultimate: 'Army of the Dead', passive: 'Restless Dead' },
   favoredParts: ['strike', 'heavy'],
   cards: NECRO_CARDS,
 

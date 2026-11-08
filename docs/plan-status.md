@@ -20,7 +20,7 @@ starter-only Traveler, to try the card system on very different kits.
 | Phaser + TypeScript + Vite | 🟡 TypeScript + **Canvas 2D by hand** + **esbuild**, one self-contained `index.html` | Fine for shapes; revisit when real sprites/animation arrive |
 | Tauri or Electron desktop | ⬜ | Browser only; deployed to GitHub Pages |
 | Zod data validation | ⬜ | TypeScript types + discriminated unions instead |
-| `SaveService` (localStorage / file) | ⬜ | Nothing is saved yet |
+| `SaveService` (localStorage / file) | 🟡 `src/meta/progress.ts` | Versioned save (v2) with migration, a backup copy, newer-version protection, merge with other tabs, export/import (no UI yet) |
 | Vitest unit tests | 🟡 `node:test` | |
 | Playwright E2E | 🟡 Headless `node:vm` runner with a stub canvas | No real-browser tests; online play is tested in memory |
 | Seeded RNG (`systems/rng.ts`, never `Math.random`) | 🟡 Game uses `Math.random`; tests swap in a seeded PRNG | Same effect for tests; a real `rng.ts` is still needed for replays/daily seeds |
@@ -53,10 +53,20 @@ The plan's `CLAUDE.md` rules in section 11 (`npm run validate`, `npm run check-a
 |---|---|---|
 | Menu → class → run build → map → 12 waves → result | 🟡 | Menu → class → 12 waves → result. No run builds, no map select |
 | 12 waves, bosses on 3 / 6 / 9 / 12, wave lengths 45–75 s | ✅ | |
-| 4 bosses: Thornback Troll, Bone Colossus, Crimson Wyvern, Hollow King (3 phases, shrinking arena) | ✅ | |
-| All 8 enemy types + elites from wave 7 | ✅ | Cultists don't heal allies yet |
+| 4 bosses: Thornback Troll, Bone Colossus, Crimson Wyvern, Hollow King (3 phases, shrinking arena) | ✅ | HP raised 1.5× after playtesting (1350 / 3600 / 4800 / 9750) |
+| All 8 enemy types + elites from wave 7 | 🟡 | **Fewer, tougher enemies with one role and one weakness each** (cap 70, half the spawn rate, ~2× HP and XP; see `role`/`weakness` in `ENEMY_TYPES`). From wave 7, slimes/goblins fade out and orcs/cultists grow; elite chance rises 6% → 10% by wave 11 |
+| Enemy attack warnings | ➕ | Archers stop and show a thin red aim line for 0.7 s, then fire a fast arrow (520 px/s) along it. Imps light a 0.6 s fuse with a blast circle; killed first, they blow up nearby enemies. Telegraphs are in the snapshot, so co-op players see them |
+| 4 new enemy types | ➕ | **Tusk Boar** (charges down a shown lane, then dazed: +50% damage taken), **Bog Toad** (lobs poison at your spot: circle, then a pool), **Wraith** (ethereal and immune 1.5 s, solid 2.5 s), **Grave Caller** (channels, then raises 3 bats; a hit interrupts). From waves 2 / 4 / 5 / 7 |
+| Cultist heals allies | ✅ | Channels a 1.2 s green circle, heals enemies inside by 35%; any hit interrupts. At most 2 alive per player |
+| Accessories | 🟡 | **Final-boss loot** (one per player who wins; the first win always drops the Shard of the Crown), **up to 3 worn per run** (E on class select), Lv 1–3: duplicates level up, gold upgrades (50% / 100% of value), a Lv 3 duplicate becomes gold. 8 of the plan's ~20 + the Shard (`src/meta/accessories.ts`). Online players bring their own (checked by the host). Plan's shop and slot prices replaced (see `progression.md` 5.0) |
+| Class unlocks for gold | ✅ | Vampire 500, Necromancer 800 (U on a locked class), or the milestone |
+| Live scoreboard | ➕ | The HUD shows the run score (top right); **hold Tab** for every player's level, kills, damage, damage taken and revives while the game keeps running. Works for joined players (it reads only snapshot data) |
+| End-of-run scoreboard | ➕ | Result screen shows the run score and a row per player: level, kills, damage dealt, damage taken, revives (★ = top damage in co-op). Sent in the snapshot, so joined players see it |
+| Local high scores | ➕ | Top 10 runs on this browser, saved with progress (score = 500/wave cleared + 2000/boss + 10/kill + 5000 for a win). H on the menu opens the table. Test-mode and bot runs don't count |
+| Ultimate charge per kill | 🟡 2% (elites 10%) | Doubled from the plan's 1% / 5% because there are about half as many kills |
+| — | ➕ Heal orbs | Elites drop one (10 HP) and bosses drop three (15 HP each), so every class can recover HP |
 | Level-ups, no level cap | ✅ | |
-| XP curve `10 + 6L + 0.6L²` | 🟡 `8 + 5L + 0.5L²` | Tuned for the prototype |
+| XP curve `10 + 6L + 0.6L²` | 🟡 `8 + 5L + 0.5L²`, levels 1–2 cost 7 and 11 | Tuned for the prototype; the cheap first levels bring the first card in ~13 s |
 | 16 class cards per class, 5 slots, 6th after Boss 2, upgrades by rarity, evolutions | ✅ | |
 | 8 shared relics, 4 relic slots; stat cards as filler | ✅ | |
 | First offer = 3 different parts; owned cards weighted up once 3+ slots used | ✅ | |
@@ -92,7 +102,7 @@ The class select screen is a row of 6 tiles plus a detail panel; more classes ne
 | Feature | Status |
 |---|---|
 | Gold and Specialist EXP formulas | 🟡 Calculated and shown on the result screen (no map multiplier), **not saved** |
-| Saved progress | 🟡 Runs, wins, best wave and unlocked classes, in `localStorage` (`src/meta/progress.ts`) |
+| Saved progress | 🟡 Runs, wins, best wave, unlocked classes, high scores, **gold** and **Specialist EXP per class** (levels 1–15, `100 × level` EXP each), in `localStorage` (`src/meta/progress.ts`). Gold buys accessory upgrades and locked classes |
 | Specialist levels, skill points, skill trees | ⬜ |
 | Shop, costumes, pets, accessories | ⬜ |
 | Power budget 30% meta / 70% in-run, balance simulator | ⬜ |

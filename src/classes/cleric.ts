@@ -31,30 +31,30 @@ interface ClericState {
 const state = (): ClericState => run.classState as ClericState;
 
 const CLERIC_CARDS: CardDef[] = [
-  { id: 'devout', name: 'Devout', part: 'passive', desc: 'Faith fills 30% faster; Purify deals +10% more.', ups: ['speed', 'effect'] },
-  { id: 'sacred_flame', name: 'Sacred Flame', part: 'strike', desc: 'Bolts leave burning holy ground.', ups: ['damage', 'range', 'duration'] },
-  { id: 'twin_bolts', name: 'Twin Bolts', part: 'strike', desc: 'Fire 2 bolts at once.', ups: ['projectiles'] },
-  { id: 'swift_prayer', name: 'Swift Prayer', part: 'strike', desc: 'Attack 25% faster.', ups: ['speed'] },
-  { id: 'heavier_smite', name: 'Heavier Smite', part: 'heavy', desc: 'Smite hits 40% harder over a bigger area.', ups: ['damage', 'range'] },
-  { id: 'echo_smite', name: 'Echo Smite', part: 'heavy', desc: 'Smite strikes again 1 s later.', ups: ['damage', 'effect'] },
-  { id: 'healing_smite', name: 'Healing Smite', part: 'heavy', desc: 'Smite heals you for each enemy hit.', ups: ['heal'] },
-  { id: 'blessed_path', name: 'Blessed Path', part: 'dash', desc: 'Radiant Step trail hurts and heals twice as much.', ups: ['damage', 'heal', 'duration'] },
-  { id: 'holy_leap', name: 'Holy Leap', part: 'dash', desc: 'Dash farther and land with a burst of light.', ups: ['range', 'damage'] },
-  { id: 'light_step', name: 'Light Step', part: 'dash', desc: 'Dash cooldown −20%. +1 charge at Lv5.', ups: ['speed'] },
-  { id: 'greater_intervention', name: 'Greater Intervention', part: 'ultimate', desc: 'More pillars, and it lasts 2 s longer.', ups: ['damage', 'heal', 'duration'] },
-  { id: 'wrath_of_heaven', name: 'Wrath of Heaven', part: 'ultimate', desc: 'Pillars deal +50% to undead and bosses.', ups: ['damage', 'effect'] },
-  { id: 'afterglow', name: 'Afterglow', part: 'ultimate', desc: 'After Divine Intervention, regen 4 HP/s for 5 s.', ups: ['heal', 'duration'] },
+  { id: 'devout', name: 'Devout', part: 'passive', desc: 'Faith fills 30% faster, so Judgment strikes more often. You also deal 10% more damage to undead.', ups: ['speed', 'effect'] },
+  { id: 'sacred_flame', name: 'Sacred Flame', part: 'strike', desc: 'Holy Bolts leave a patch of burning holy ground where they hit.', ups: ['damage', 'range', 'duration'] },
+  { id: 'twin_bolts', name: 'Twin Bolts', part: 'strike', desc: 'Fire 2 Holy Bolts with every attack.', ups: ['projectiles'] },
+  { id: 'swift_prayer', name: 'Swift Prayer', part: 'strike', desc: 'Fire Holy Bolts 25% faster.', ups: ['speed'] },
+  { id: 'heavier_smite', name: 'Heavier Smite', part: 'heavy', desc: 'Smite deals 40% more damage over a bigger area.', ups: ['damage', 'range'] },
+  { id: 'echo_smite', name: 'Echo Smite', part: 'heavy', desc: 'Smite strikes a second time 1 s later.', ups: ['damage', 'effect'] },
+  { id: 'healing_smite', name: 'Healing Smite', part: 'heavy', desc: 'Smite heals you for each enemy it hits.', ups: ['heal'] },
+  { id: 'blessed_path', name: 'Blessed Path', part: 'dash', desc: 'Radiant Step’s light trail deals and heals twice as much.', ups: ['damage', 'heal', 'duration'] },
+  { id: 'holy_leap', name: 'Holy Leap', part: 'dash', desc: 'Radiant Step goes 40% farther and lands with a burst of light that damages enemies.', ups: ['range', 'damage'] },
+  { id: 'light_step', name: 'Light Step', part: 'dash', desc: 'Radiant Step recharges 20% faster. At Lv5, gain a 2nd dash.', ups: ['speed'] },
+  { id: 'greater_intervention', name: 'Greater Intervention', part: 'ultimate', desc: 'Divine Intervention lasts 2 s longer and calls down more, stronger pillars.', ups: ['damage', 'heal', 'duration'] },
+  { id: 'wrath_of_heaven', name: 'Wrath of Heaven', part: 'ultimate', desc: 'Divine Intervention pillars deal 50% more damage to undead and bosses.', ups: ['damage', 'effect'] },
+  { id: 'afterglow', name: 'Afterglow', part: 'ultimate', desc: 'After Divine Intervention ends, heal 4 HP every second for 5 s.', ups: ['heal', 'duration'] },
   {
-    id: 'guardian_angel', name: 'Guardian Angel', part: 'wild', desc: 'Once per wave, survive a killing blow with 1 HP.', ups: ['effect'],
-    evo: { name: 'Seraph', desc: 'Survive with 50% HP and blast enemies away.', need: { card: 'afterglow' }, needText: 'Afterglow card' },
+    id: 'guardian_angel', name: 'Guardian Angel', part: 'wild', desc: 'Once per wave, a killing blow leaves you at 1 HP instead.', ups: ['effect'],
+    evo: { name: 'Seraph', desc: 'Survive with 50% HP instead, and blast nearby enemies away.', need: { card: 'afterglow' }, needText: 'Afterglow card' },
   },
   {
-    id: 'holy_orbs', name: 'Holy Orbs', part: 'wild', desc: '2 orbs circle you and burn enemies (more vs undead).', ups: ['damage', 'projectiles', 'speed'],
-    evo: { name: 'Sun Ring', desc: '6 bigger orbs with double damage.', need: { part: 'strike' }, needText: 'any Strike card' },
+    id: 'holy_orbs', name: 'Holy Orbs', part: 'wild', desc: '2 holy orbs circle you and burn enemies they touch (extra damage to undead).', ups: ['damage', 'projectiles', 'speed'],
+    evo: { name: 'Sun Ring', desc: '6 bigger orbs that deal double damage.', need: { part: 'strike' }, needText: 'any Strike card' },
   },
   {
-    id: 'falling_bell', name: 'Falling Bell', part: 'wild', desc: 'Every 10 s, a holy bell drops on the biggest crowd.', ups: ['damage', 'range', 'speed'],
-    evo: { name: 'Cathedral Bells', desc: '3 bells every 6 s.', need: { part: 'heavy' }, needText: 'any Heavy Strike card' },
+    id: 'falling_bell', name: 'Falling Bell', part: 'wild', desc: 'Every 10 s, a holy bell falls on the biggest crowd of enemies.', ups: ['damage', 'range', 'speed'],
+    evo: { name: 'Cathedral Bells', desc: '3 bells fall every 6 s.', need: { part: 'heavy' }, needText: 'any Heavy Strike card' },
   },
 ];
 
@@ -75,6 +75,7 @@ registerClass({
     'Passive: +25% damage to undead; kills fill Faith',
   ],
   keys: { lmb: 'Bolt', rmb: 'Smite', spc: 'Step', q: 'Divine' },
+  abilities: { strike: 'Holy Bolt', heavy: 'Smite', dash: 'Radiant Step', ultimate: 'Divine Intervention', passive: 'Faith & Purify' },
   favoredParts: ['strike', 'heavy'],
   cards: CLERIC_CARDS,
 

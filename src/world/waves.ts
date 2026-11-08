@@ -6,31 +6,55 @@ import { livingHeroes, partyScale, run, showBanner, withHero } from '../core/sta
 import { endRun } from '../game/run';
 import { BOSS_DEFS, spawnBoss } from './bosses';
 import { reviveHero } from './combat';
-import { spawnEnemy } from './enemies';
+import { ENEMY_TYPES, spawnEnemy } from './enemies';
 
 /** Downed heroes come back at the start of each wave with this share of their HP. */
 const WAVE_REVIVE_HP = 0.5;
 
 /** Length in seconds of each normal wave. Boss waves last until the boss dies. */
 const WAVE_DURATION: Record<number, number> = { 1: 45, 2: 50, 4: 55, 5: 60, 7: 60, 8: 70, 10: 70, 11: 75 };
-const ENEMY_CAP = 170;
+/** Fewer, tougher enemies: the player should be choosing targets, not mowing a horde. */
+const ENEMY_CAP = 70;
 const ELITE_FROM_WAVE = 7;
+/** Elite chance on the first elite wave, rising each wave after it (6% on wave 7 → 10% on wave 11). */
 const ELITE_CHANCE = 0.06;
+const ELITE_CHANCE_PER_WAVE = 0.01;
+/** From this wave on, fodder fades out and the tougher enemies take its place. */
+const LATE_FROM_WAVE = 7;
 
 export const isBossWave = (wave: number): boolean => wave % 3 === 0;
 
-/** Spawn weight of each enemy type on a wave (0 = not yet). */
+/** Spawn weight of each enemy type on a wave (0 = not yet). Late waves swap fodder for tougher enemies. */
 function spawnWeights(wave: number): Partial<Record<EnemyTypeId, number>> {
+  const late = Math.max(0, wave - LATE_FROM_WAVE + 1); // 0 before wave 7, then 1, 2, …
+  const fodder = Math.max(1, 3 - 0.4 * late);
+  const tough = 1.4 + 0.2 * late;
   return {
-    slime: 3,
-    goblin: 3,
+    slime: fodder,
+    goblin: fodder,
     bat: wave >= 2 ? 2 : 0,
     archer: wave >= 4 ? 2 : 0,
     imp: wave >= 4 ? 1.4 : 0,
-    cultist: wave >= 5 ? 1.4 : 0,
-    orc: wave >= 5 ? 1.4 : 0,
+    cultist: wave >= 5 ? tough : 0,
+    orc: wave >= 5 ? tough : 0,
+    boar: wave >= 2 ? 1.2 : 0,
+    toad: wave >= 4 ? 1.2 : 0,
+    wraith: wave >= 5 ? 1.2 : 0,
+    caller: wave >= 7 ? 1 : 0,
   };
 }
+
+/** Is this type already at its `maxAlive` (per living player)? */
+function atLimit(type: EnemyTypeId): boolean {
+  const max = ENEMY_TYPES[type].maxAlive;
+  if (!max) return false;
+  const players = Math.max(1, livingHeroes().length);
+  return run.enemies.filter((e) => !e.dead && !e.boss && e.type === type).length >= max * players;
+}
+
+/** Chance that a spawn on this wave is an elite. */
+const eliteChance = (wave: number): number =>
+  wave >= ELITE_FROM_WAVE ? ELITE_CHANCE + ELITE_CHANCE_PER_WAVE * (wave - ELITE_FROM_WAVE) : 0;
 
 export function startWave(wave: number): void {
   run.wave = wave;
@@ -59,17 +83,17 @@ export function completeWave(): void {
 export function updateWave(dt: number): void {
   run.waveTime += dt;
   const wave = run.wave, boss = isBossWave(wave);
-  const spawnRate = (boss ? 0.5 + 0.08 * wave : 1.0 + 0.3 * wave) * partyScale(0.6);
+  const spawnRate = (boss ? 0.25 + 0.04 * wave : 0.5 + 0.15 * wave) * partyScale(0.6);
   run.spawnBudget += spawnRate * dt;
   const weights = spawnWeights(wave);
-  const types = (Object.keys(weights) as EnemyTypeId[]).filter((k) => (weights[k] ?? 0) > 0);
   while (run.spawnBudget >= 1) {
     run.spawnBudget -= 1;
     if (run.enemies.length >= ENEMY_CAP * partyScale(0.25)) break;
+    const types = (Object.keys(weights) as EnemyTypeId[]).filter((k) => (weights[k] ?? 0) > 0 && !atLimit(k));
     const type = weightedPick(types, (k) => weights[k] ?? 0);
     const pos = findSpawnPosition();
-    const elite = wave >= ELITE_FROM_WAVE && Math.random() < ELITE_CHANCE;
-    if (type === 'bat' && Math.random() < 0.5) {
+    const elite = wave >= ELITE_FROM_WAVE && Math.random() < eliteChance(wave);
+    if (type === 'bat' && Math.random() < 0.3) {
       // bats sometimes arrive as a small flock
       for (let i = 0; i < 3; i++) spawnEnemy('bat', pos.x + randRange(-30, 30), pos.y + randRange(-30, 30), false);
     } else {

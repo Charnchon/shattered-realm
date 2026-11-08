@@ -14,9 +14,16 @@ export function drawText(text: string, x: number, y: number, size: number, color
   ctx.fillText(text, x, y);
 }
 
-/** Bold pixel-font text: titles, numbers, labels. */
+/** Below this size, pixel text is hard to read, so it is drawn in the body font (bold) instead. */
+const SMALL_TEXT = 12;
+
+/**
+ * Display text: titles, numbers, labels. Big text uses the pixel font; small text (tags, name
+ * plates, tiny numbers) uses the body font in extra-bold, which stays readable at 9-12 px.
+ */
 export function drawPixelText(text: string, x: number, y: number, size: number, color: string, align: CanvasTextAlign = 'left'): void {
-  drawText(text, x, y, size, color, align, FONT_PIXEL, '700');
+  if (size <= SMALL_TEXT) drawText(text, x, y, size, color, align, FONT_BODY, '800');
+  else drawText(text, x, y, size, color, align, FONT_PIXEL, '400');
 }
 
 /** Word-wrap `text` to `maxWidth`. Returns the y of the last line drawn. */

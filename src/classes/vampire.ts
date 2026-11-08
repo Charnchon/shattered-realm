@@ -33,30 +33,30 @@ interface VampireState {
 const state = (): VampireState => run.classState as VampireState;
 
 const VAMPIRE_CARDS: CardDef[] = [
-  { id: 'crimson_feast', name: 'Crimson Feast', part: 'passive', desc: '+1% lifesteal, and kills heal 1 HP.', ups: ['heal', 'effect'] },
-  { id: 'razor_claws', name: 'Razor Claws', part: 'strike', desc: 'Claws hit 25% harder; the 3rd hit is wider.', ups: ['damage', 'range', 'speed'] },
-  { id: 'bleeding_claws', name: 'Bleeding Claws', part: 'strike', desc: 'Claw hits cause bleeding for 3 s.', ups: ['damage', 'duration'] },
-  { id: 'hemorrhage', name: 'Hemorrhage', part: 'strike', desc: 'Claw crits burst in blood that heals you.', ups: ['heal', 'effect'] },
-  { id: 'rending_lunge', name: 'Rending Lunge', part: 'heavy', desc: 'Crimson Rend lunges twice as far and causes bleeding.', ups: ['damage', 'range', 'duration'] },
-  { id: 'feeding_rend', name: 'Feeding Rend', part: 'heavy', desc: 'Crimson Rend heals an extra 1% max HP per enemy hit.', ups: ['heal', 'effect'] },
-  { id: 'twin_rend', name: 'Twin Rend', part: 'heavy', desc: 'Crimson Rend strikes a second time.', ups: ['damage', 'projectiles'] },
-  { id: 'mist_form', name: 'Mist Form', part: 'dash', desc: 'Mist Step deals double damage and heals double.', ups: ['damage', 'heal', 'range'] },
-  { id: 'blood_trail', name: 'Blood Trail', part: 'dash', desc: 'Mist Step leaves a blood trail that hurts enemies.', ups: ['damage', 'duration'] },
-  { id: 'swift_mist', name: 'Swift Mist', part: 'dash', desc: 'Mist Step cooldown −20%. +1 charge at Lv5.', ups: ['speed'] },
-  { id: 'hunger_moon', name: 'Hunger Moon', part: 'ultimate', desc: 'Blood Moon lasts 3 s longer with ×4 lifesteal.', ups: ['heal', 'duration'] },
-  { id: 'red_moon_burst', name: 'Red Moon Burst', part: 'ultimate', desc: 'The shield explosion at the end is bigger and stronger.', ups: ['damage', 'range'] },
-  { id: 'thrall_moon', name: 'Thrall Moon', part: 'ultimate', desc: 'During Blood Moon, kills rise as thralls for 5 s.', ups: ['projectiles', 'duration'] },
+  { id: 'crimson_feast', name: 'Crimson Feast', part: 'passive', desc: '+1% lifesteal, and every kill heals you 1 HP.', ups: ['heal', 'effect'] },
+  { id: 'razor_claws', name: 'Razor Claws', part: 'strike', desc: 'Blood Claws deal 25% more damage, and the 3rd hit of the combo swings wider.', ups: ['damage', 'range', 'speed'] },
+  { id: 'bleeding_claws', name: 'Bleeding Claws', part: 'strike', desc: 'Blood Claws make enemies bleed for 3 s.', ups: ['damage', 'duration'] },
+  { id: 'hemorrhage', name: 'Hemorrhage', part: 'strike', desc: 'Critical hits with Blood Claws burst in blood: nearby enemies take damage and you heal.', ups: ['heal', 'effect'] },
+  { id: 'rending_lunge', name: 'Rending Lunge', part: 'heavy', desc: 'Crimson Rend lunges twice as far and makes enemies bleed.', ups: ['damage', 'range', 'duration'] },
+  { id: 'feeding_rend', name: 'Feeding Rend', part: 'heavy', desc: 'Crimson Rend heals an extra 1% of your max HP for each enemy hit.', ups: ['heal', 'effect'] },
+  { id: 'twin_rend', name: 'Twin Rend', part: 'heavy', desc: 'Crimson Rend strikes a second time right after the first.', ups: ['damage', 'projectiles'] },
+  { id: 'mist_form', name: 'Mist Form', part: 'dash', desc: 'Mist Step deals double damage and heals double for each enemy you pass through.', ups: ['damage', 'heal', 'range'] },
+  { id: 'blood_trail', name: 'Blood Trail', part: 'dash', desc: 'Mist Step leaves a blood trail that hurts enemies standing in it.', ups: ['damage', 'duration'] },
+  { id: 'swift_mist', name: 'Swift Mist', part: 'dash', desc: 'Mist Step recharges 20% faster. At Lv5, gain a 2nd dash.', ups: ['speed'] },
+  { id: 'hunger_moon', name: 'Hunger Moon', part: 'ultimate', desc: 'Blood Moon lasts 3 s longer, with ×4 lifesteal instead of ×3.', ups: ['heal', 'duration'] },
+  { id: 'red_moon_burst', name: 'Red Moon Burst', part: 'ultimate', desc: 'When Blood Moon ends, the Blood Shield explosion is bigger and stronger.', ups: ['damage', 'range'] },
+  { id: 'thrall_moon', name: 'Thrall Moon', part: 'ultimate', desc: 'During Blood Moon, enemies you kill rise as thralls and fight for you for 5 s.', ups: ['projectiles', 'duration'] },
   {
-    id: 'bat_swarm', name: 'Bat Swarm', part: 'wild', desc: '2 bats circle you; their hits lifesteal.', ups: ['damage', 'projectiles', 'speed'],
-    evo: { name: 'Bat Storm', desc: 'Twice the bats, double damage, wider circle.', need: { part: 'dash' }, needText: 'any Dash card' },
+    id: 'bat_swarm', name: 'Bat Swarm', part: 'wild', desc: '2 bats circle you and bite enemies; their bites heal you.', ups: ['damage', 'projectiles', 'speed'],
+    evo: { name: 'Bat Storm', desc: 'Twice as many bats, double damage, wider circle.', need: { part: 'dash' }, needText: 'any Dash card' },
   },
   {
-    id: 'blood_rain', name: 'Blood Rain', part: 'wild', desc: 'Every 6 s, blood drops fall on enemies; each hit heals.', ups: ['damage', 'projectiles', 'heal'],
-    evo: { name: 'Red Monsoon', desc: 'Twice the drops, every 3 s.', need: { relic: 'heart' }, needText: 'Heart Gem relic' },
+    id: 'blood_rain', name: 'Blood Rain', part: 'wild', desc: 'Every 6 s, blood drops fall on nearby enemies; each hit heals you.', ups: ['damage', 'projectiles', 'heal'],
+    evo: { name: 'Red Monsoon', desc: 'Twice as many drops, every 3 s.', need: { relic: 'heart' }, needText: 'Heart Gem relic' },
   },
   {
-    id: 'gaze_of_the_count', name: 'Gaze of the Count', part: 'wild', desc: 'Every 8 s, charm the strongest nearby enemy for 3 s.', ups: ['duration', 'speed'],
-    evo: { name: 'Thrall Master', desc: 'Charm 2 enemies for 6 s.', need: { card: 'thrall_moon' }, needText: 'Thrall Moon card' },
+    id: 'gaze_of_the_count', name: 'Gaze of the Count', part: 'wild', desc: 'Every 8 s, the strongest nearby enemy is charmed and fights for you for 3 s.', ups: ['duration', 'speed'],
+    evo: { name: 'Thrall Master', desc: 'Charm 2 enemies at once, for 6 s.', need: { card: 'thrall_moon' }, needText: 'Thrall Moon card' },
   },
 ];
 
@@ -77,6 +77,7 @@ registerClass({
     'Passive: overheal becomes a Blood Shield',
   ],
   keys: { lmb: 'Claws', rmb: 'Rend', spc: 'Mist', q: 'Moon' },
+  abilities: { strike: 'Blood Claws', heavy: 'Crimson Rend', dash: 'Mist Step', ultimate: 'Blood Moon', passive: 'Blood Thirst' },
   favoredParts: ['dash', 'strike'],
   cards: VAMPIRE_CARDS,
 

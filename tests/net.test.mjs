@@ -114,7 +114,8 @@ test('online: the friend plays a full minute from snapshots, moves, and picks ca
   assert.equal(fr.heroes.length, 2);
   assert.equal(fr.hero, fr.heroes[1], 'the friend\'s screen follows their own hero');
   assert.equal(fr.wave, host.sr.run.wave);
-  assert.equal(fr.kills, host.sr.run.kills);
+  // the friend's screen is up to one snapshot (50 ms) behind the host, so a kill or two may not have arrived yet
+  assert.ok(host.sr.run.kills - fr.kills >= 0 && host.sr.run.kills - fr.kills <= 3, `kills: friend ${fr.kills}, host ${host.sr.run.kills}`);
   assert.ok(Math.abs(fr.enemies.length - host.sr.run.enemies.length) <= 12, 'about the same enemies on both screens');
   assert.ok(friend.counter.drawCalls > 1000, 'the friend\'s screen renders the world');
   assert.equal(friend.sr.scene, host.sr.scene);
@@ -186,4 +187,73 @@ test('online: the room is closed to new players once the game starts', () => {
   assert.equal(host.sr.run.heroes.length, 2);
   assert.equal(late.sr.scene, 'menu');
   assert.match(late.sr.net.notice, /already started/);
+});
+
+test('online: holding Tab shows the live scoreboard, and a friend sees the same per-player stats as the host', () => {
+  const { host, friend, link } = setUpRoom();
+  host.sr.startOnlineGame();
+  for (let frame = 0; frame < 60 * 30; frame++) {
+    sendAsFriend(link, { t: 'input', input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: true, heavy: false, dash: false, ult: false } });
+    if (friend.sr.scene === 'levelup' && friend.sr.run.offer) sendAsFriend(link, { t: 'pick', i: 0 });
+    link.pump();
+    host.sr.update(FRAME);
+    link.pump();
+    friend.sr.update(FRAME);
+    link.pump();
+  }
+  const hostHeroes = host.sr.run.heroes, friendHeroes = friend.sr.run.heroes;
+  assert.ok(hostHeroes[0].score.kills > 0, 'the host has kills');
+  for (let i = 0; i < hostHeroes.length; i++) {
+    const h = hostHeroes[i].score, f = friendHeroes[i].score;
+    assert.ok(h.kills - f.kills >= 0 && h.kills - f.kills <= 3, `player ${i} kills: friend sees ${f.kills}, host has ${h.kills}`);
+    assert.ok(f.damage > 0 || h.damage === 0, `player ${i} damage reaches the friend`);
+  }
+
+  const drawn = () => { friend.counter.drawCalls = 0; friend.sr.render(); return friend.counter.drawCalls; };
+  const without = drawn();
+  friend.sr.keysDown.tab = true;
+  const withTab = drawn();
+  friend.sr.keysDown.tab = false;
+  assert.ok(withTab > without + 10, `holding Tab draws the scoreboard on the friend's screen (${without} -> ${withTab} draw calls)`);
+});
+
+test('online: each player gets their own rewards on their own screen when the run ends', () => {
+  const { host, friend, link } = setUpRoom(); // the host plays in test mode, the friend for real
+  host.sr.startOnlineGame();
+  const tick = () => { link.pump(); host.sr.update(FRAME); link.pump(); friend.sr.update(FRAME); };
+  for (let i = 0; i < 120; i++) tick();
+  host.sr.endRunForTest(false);
+  for (let i = 0; i < 6; i++) tick();
+  assert.equal(friend.sr.scene, 'result');
+  const mine = friend.sr.progress.lastRewards;
+  assert.equal(mine.classId, 'vampire', 'the friend is paid for the class they played');
+  assert.equal(mine.saved, true);
+  assert.equal(mine.coopBonus, true);
+  assert.equal(friend.sr.progress.getProgress().gold, mine.gold, 'saved in the friend\'s own progress');
+  assert.equal(host.sr.progress.lastRewards.saved, false, 'the host played in test mode: nothing saved');
+  friend.sr.render();
+});
+
+test('online: a friend brings their own accessories; the host checks them', () => {
+  const host = loadGame({ seed: 5 });
+  const friend = loadGame({ seed: 6 });
+  friend.sr.progress.importSave(JSON.stringify({ version: 2, accessories: { glass_heart: 3 }, loadout: ['glass_heart'] }));
+  const link = linkedConnections();
+  host.sr.DEBUG.god = true;
+  host.sr.hostGame('cleric', false);
+  host.sr.acceptConnection(link.hostEnd);
+  friend.sr.connectToHost(link.friendEnd, 'vampire');
+  link.pump(); link.pump();
+  // a third "player" sends made-up accessories
+  const cheat = linkedConnections();
+  host.sr.acceptConnection(cheat.hostEnd);
+  cheat.friendEnd.send(JSON.stringify({ t: 'hello', classId: 'oathknight', accessories: [{ id: 'glass_heart', level: 99 }, { id: 'glass_heart', level: 1 }, { id: 'god_ring', level: 1 }, 'x', { id: 'titan_belt' }, { id: 'monocle', level: 2 }, { id: 'wind_boots', level: 1 }] }));
+  cheat.pump();
+  host.sr.startOnlineGame();
+  const [, friendHero, cheatHero] = host.sr.run.heroes;
+  assert.deepEqual(JSON.parse(JSON.stringify(friendHero.accessories)), [{ id: 'glass_heart', level: 3 }], 'the friend wears their own gear');
+  assert.deepEqual(JSON.parse(JSON.stringify(cheatHero.accessories)), [
+    { id: 'glass_heart', level: 3 }, { id: 'titan_belt', level: 1 }, { id: 'monocle', level: 2 },
+  ], 'levels clamped, duplicates and unknown ids dropped, at most 3');
+  assert.equal(host.sr.run.heroes[0].accessories.length, 0, 'the host wears nothing');
 });

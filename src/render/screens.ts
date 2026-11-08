@@ -1,15 +1,20 @@
 // ============================================================ screens: level up, menu, pause, result
 // Layout functions (…Rects / …Buttons) are shared by drawing and input handling.
-import type { ClassDef, OfferItem, Rect, RelicId } from '../types';
+import type { CardPart, ClassDef, OfferItem, Rect, RelicId } from '../types';
 import { ctx } from '../core/canvas';
-import { BOSS_COUNT, COLOR, FINAL_WAVE, FONT_PIXEL, RARITY, TAU, VIEW_H, VIEW_W, type Rarity } from '../core/constants';
+import { BOSS_COUNT, COLOR, FINAL_WAVE, FONT_BODY, FONT_PIXEL, RARITY, TAU, VIEW_H, VIEW_W, type Rarity } from '../core/constants';
 import { mouseIn } from '../core/input';
 import { formatTime } from '../core/math';
 import { DEBUG, menuSelection, run, totalArmor } from '../core/state';
 import { CLASSES, CLASS_ORDER } from '../classes/registry';
 import { CARD_MAX_LEVEL, OFFER_SIZE, PART_LABEL, canReroll, cardDef, relicDef, rerollLabel, upgradeLabel } from '../progression/cards';
-import { isClassUnlocked, lastUnlocked, unlockText } from '../meta/progress';
+import { classPrice, getProgress, isClassUnlocked, lastRank, unlockText } from '../meta/progress';
+import { LOADOUT_SLOTS } from '../meta/accessories';
+import { drawGearPanel, gearOpen } from './gear';
 import { net } from '../net/session';
+import { offerFadeIn } from '../game/controls';
+import { drawScoreboard, groupDigits, liveScore, scoreboardHeight } from './scoreboard';
+import { drawClassLevel, drawClassLevelBadge, drawRewards, goldText } from './rewards';
 import { drawButton, drawDashedRect, drawDiamond, drawPanel, drawPixelText, drawText, drawWrappedText } from './primitives';
 
 const OVERLAY = 'rgba(10,7,14,0.78)';
@@ -36,7 +41,10 @@ export function drawLevelUp(): void {
   if (!offer) { drawWaitingForTeam(); return; }
   drawPixelText('Level up! · Lv ' + (run.player.level - run.pendingLevelUps + 1), VIEW_W / 2, 84, 30, COLOR.gold, 'center');
   const rects = levelCardRects();
+  ctx.save();
+  ctx.globalAlpha = 0.25 + 0.75 * offerFadeIn(); // the cards fade in while clicks are ignored
   offer.items.forEach((item, i) => drawOfferCard(item, rects[i], i, offer.hover === i));
+  ctx.restore();
   drawSlotStrip();
   const reroll = rerollButtonRect(), canUse = canReroll();
   drawPanel(reroll.x, reroll.y, reroll.w, reroll.h, canUse && mouseIn(reroll) ? COLOR.panelHover : COLOR.panel, canUse ? COLOR.gold : COLOR.line, 2);
@@ -52,29 +60,47 @@ function drawWaitingForTeam(): void {
   drawText(who, VIEW_W / 2, VIEW_H / 2 + 14, 15, COLOR.muted, 'center');
 }
 
+/** Which button uses each card part. */
+const PART_KEY: Record<CardPart, string> = {
+  strike: 'Left click', heavy: 'Right click', dash: 'Space', ultimate: 'Q', passive: 'Always on', wild: 'Always on',
+};
+
+/** The small tag at the top of a card: the part and its button, e.g. "HEAVY STRIKE · RIGHT CLICK". */
 function offerTag(item: OfferItem): string {
   switch (item.kind) {
     case 'evo': return 'Evolution';
-    case 'card': return PART_LABEL[item.def.part];
+    case 'card': return item.def.part === 'wild' ? 'Wild · new power' : PART_LABEL[item.def.part] + ' · ' + PART_KEY[item.def.part];
     case 'relic': return 'Relic';
-    case 'stat': return 'Stat';
+    case 'stat': return 'Stat boost';
   }
 }
 
-/** The three text blocks under a card's name: level change, upgrades, description. */
+/** The line under the name that answers "what does this improve?", e.g. "Upgrades: Mark Prey". */
+function offerTarget(item: OfferItem): string {
+  switch (item.kind) {
+    case 'card': return item.def.part === 'wild' ? 'Adds a new power' : 'Upgrades: ' + run.cls.abilities[item.def.part];
+    case 'evo': return 'Evolves your ' + item.def.name + ' card';
+    case 'relic': return 'A relic: works for every class';
+    case 'stat': return 'A small permanent boost';
+  }
+}
+
+/** The text blocks under the target line: level change, rolled upgrades, and what the card does. */
 function offerDetails(item: OfferItem): { levelLine: string; upgradeLine: string; desc: string } {
   switch (item.kind) {
     case 'card': {
       const def = item.def;
-      let desc = item.isNew ? def.desc : '';
-      if (!item.isNew && def.evo && !run.cards[def.id].evolved && item.to >= CARD_MAX_LEVEL) desc = 'Evolves at Lv5 with ' + def.evo.needText + '.';
-      if (item.isNew && def.evo) desc += ' Evolves with ' + def.evo.needText + '.';
-      return { levelLine: item.isNew ? 'NEW' : 'Lv ' + item.from + ' → ' + item.to, upgradeLine: item.ups.map(upgradeLabel).join(' · '), desc };
+      let desc = def.desc; // always shown, so upgrades remind you what the card does
+      if (def.evo && !run.cards[def.id]?.evolved) {
+        desc += item.to >= CARD_MAX_LEVEL && !item.isNew ? ' Evolves now if you have ' + def.evo.needText + '.' : ' Evolves at Lv5 with ' + def.evo.needText + '.';
+      }
+      const upgradeLine = item.ups.length ? (item.isNew ? 'Bonus: ' : 'This level: ') + item.ups.map(upgradeLabel).join(' · ') : '';
+      return { levelLine: item.isNew ? 'NEW CARD' : 'Lv ' + item.from + ' → ' + item.to, upgradeLine, desc };
     }
     case 'evo':
       return { levelLine: item.def.name + ' → ' + (item.def.evo?.name ?? ''), upgradeLine: '', desc: item.def.evo?.desc ?? '' };
     case 'relic':
-      return { levelLine: item.from ? 'Lv ' + item.from + ' → ' + item.to : 'NEW', upgradeLine: '', desc: item.def.desc };
+      return { levelLine: item.from ? 'Lv ' + item.from + ' → ' + item.to : 'NEW RELIC', upgradeLine: '', desc: item.def.desc };
     case 'stat':
       return { levelLine: 'Small boost', upgradeLine: '', desc: item.def.desc };
   }
@@ -85,23 +111,26 @@ function drawOfferCard(item: OfferItem, rect: Rect, index: number, hovered: bool
   const y0 = rect.y - (hovered ? 6 : 0), cx = rect.x + rect.w / 2;
   drawRarityFrame(rect, y0, rarity, hovered, index + 1);
 
-  // type tag
+  // type tag: card part + the button it's on
   const tag = offerTag(item).toUpperCase();
-  ctx.font = '700 11px ' + FONT_PIXEL;
+  ctx.font = '800 11px ' + FONT_BODY; // small text is drawn in the body font (see drawPixelText)
   const tagW = ctx.measureText(tag).width + 14;
   ctx.strokeStyle = COLOR.frame;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(cx - tagW / 2, y0 + 38, tagW, 18);
   drawPixelText(tag, cx, y0 + 51, 11, COLOR.muted, 'center');
 
+  // text flows down the card, so long names and descriptions never overlap
   const name = item.kind === 'evo' ? (item.def.evo?.name ?? item.def.name) : item.def.name;
-  drawWrappedText(name, cx, y0 + 84, rect.w - 24, 24, 21, rarity.tier > 1 ? rarity.color : COLOR.text, 'center', FONT_PIXEL);
+  let y = drawWrappedText(name, cx, y0 + 82, rect.w - 24, 23, 20, rarity.tier > 1 ? rarity.color : COLOR.text, 'center', FONT_PIXEL);
+  y = drawWrappedText(offerTarget(item), cx, y + 21, rect.w - 20, 16, 13, COLOR.gold, 'center') + 4;
 
   const { levelLine, upgradeLine, desc } = offerDetails(item);
-  const isNew = item.kind === 'card' && item.isNew;
-  drawPixelText(levelLine, cx, y0 + 136, 15, isNew || levelLine === 'NEW' ? COLOR.teal : COLOR.text, 'center');
-  if (upgradeLine) drawWrappedText(upgradeLine, cx, y0 + 156, rect.w - 24, 16, 13, COLOR.teal, 'center');
-  if (desc) drawWrappedText(desc, cx, y0 + (upgradeLine ? 188 : 166), rect.w - 30, 17, 13, COLOR.muted, 'center');
+  const isNew = levelLine.startsWith('NEW');
+  drawPixelText(levelLine, cx, y + 22, 14, isNew ? COLOR.teal : COLOR.text, 'center');
+  y += 22;
+  if (upgradeLine) y = drawWrappedText(upgradeLine, cx, y + 19, rect.w - 24, 15, 12, COLOR.teal, 'center');
+  if (desc) drawWrappedText(desc, cx, y + 24, rect.w - 26, 17, 13, COLOR.text, 'center');
 }
 
 /** Card body styled by rarity: glow, tint, border and a solid ribbon with tier gems. */
@@ -177,8 +206,9 @@ export function menuCardRects(): Rect[] {
 export function drawMenu(): void {
   drawMenuBackdrop();
   drawPixelText('Shattered Realm', VIEW_W / 2, 66, 44, COLOR.text, 'center');
-  const open = CLASS_ORDER.filter(isClassUnlocked).length;
-  drawText('Prototype · ' + open + ' of ' + CLASS_ORDER.length + ' classes unlocked · placeholder shapes, no art', VIEW_W / 2, 96, 13, COLOR.muted, 'center');
+  const open = CLASS_ORDER.filter(isClassUnlocked).length, best = getProgress().highScores[0];
+  const bestText = best ? 'Best score ' + groupDigits(best.score) + ' · H for high scores' : 'H for high scores';
+  drawText(goldText() + ' · ' + open + ' of ' + CLASS_ORDER.length + ' classes unlocked · ' + bestText, VIEW_W / 2, 96, 13, COLOR.muted, 'center');
   const rects = menuCardRects();
   CLASS_ORDER.forEach((id, i) => drawClassTile(CLASSES[id], rects[i], i, menuSelection === i));
   drawClassDetail(CLASSES[CLASS_ORDER[menuSelection]]);
@@ -189,6 +219,8 @@ export function drawMenu(): void {
   drawText('WASD move · Left click Strike · Right click Heavy Strike · Space dash · Q Ultimate · Esc pause', VIEW_W / 2, 490, 13, COLOR.text, 'center');
   const godHint = 'Click a class or press 1–' + CLASS_ORDER.length + ' to play solo. Press G for test mode (can\'t die, unlocks don\'t count): ' + (DEBUG.god ? 'ON' : 'off');
   drawText(godHint, VIEW_W / 2, 512, 12, DEBUG.god ? COLOR.gold : COLOR.dim, 'center');
+  if (highScoresOpen) drawHighScores();
+  if (gearOpen) drawGearPanel();
 }
 
 /** "Create room" / "Join room", top right of the class select screen. */
@@ -308,6 +340,7 @@ function drawClassTile(cls: ClassDef, rect: Rect, index: number, selected: boole
   ctx.globalAlpha = 1;
   if (locked) drawPadlock(cx, y0 + 32, COLOR.gold);
   drawPixelText(String(index + 1), rect.x + 12, y0 + 18, 12, COLOR.dim, 'center');
+  drawClassLevelBadge(cls.id, rect.x + rect.w - 8, y0 + 18);
   drawPixelText(cls.name, cx, y0 + 68, 15, locked ? COLOR.dim : COLOR.text, 'center');
   drawText(locked ? 'Locked' : cls.role.split(' · ')[0], cx, y0 + 85, 10, locked ? COLOR.gold : COLOR.muted, 'center');
 }
@@ -329,13 +362,23 @@ function drawClassDetail(cls: ClassDef): void {
       ctx.fillRect(rx + 110 + s * 30, rowY, 26, 9);
     }
   });
+  if (!locked) {
+    drawClassLevel(cls.id, rx, y + h - 50, 260);
+    const worn = getProgress().loadout.length;
+    drawText('Accessories ' + worn + '/' + LOADOUT_SLOTS + ' worn · E to change', rx, y + h - 18, 12, COLOR.gold);
+  }
   if (locked) {
+    const price = classPrice(cls.id);
+    if (price) drawButton(buyClassRect(), 'Unlock · ' + price + ' gold · U', getProgress().gold >= price ? COLOR.gold : COLOR.frame, undefined, 23);
     drawPadlock(x + 34, y + h - 24, COLOR.gold);
     drawPixelText('How to unlock: ' + unlockText(cls.id), x + 52, y + h - 18, 14, COLOR.gold);
   } else {
     drawText('Click its tile or press its number to play solo · C to host a room with this class', x + 24, y + h - 18, 12, COLOR.teal);
   }
 }
+
+/** "Unlock with gold" on a locked class's detail panel. */
+export const buyClassRect = (): Rect => ({ x: MENU_DETAIL.x + MENU_DETAIL.w - 254, y: MENU_DETAIL.y + MENU_DETAIL.h - 52, w: 230, h: 36 });
 
 function drawPadlock(cx: number, cy: number, color: string): void {
   ctx.strokeStyle = color;
@@ -413,8 +456,8 @@ export function drawPause(): void {
 
 export function resultButtons(): { again: Rect; menu: Rect } {
   return {
-    again: { x: VIEW_W / 2 - 230, y: 400, w: 210, h: 44 },
-    menu: { x: VIEW_W / 2 + 20, y: 400, w: 210, h: 44 },
+    again: { x: VIEW_W / 2 - 230, y: 476, w: 210, h: 44 },
+    menu: { x: VIEW_W / 2 + 20, y: 476, w: 210, h: 44 },
   };
 }
 
@@ -424,26 +467,15 @@ export function drawResult(): void {
   const accent = result.win ? COLOR.gold : COLOR.ember;
   ctx.fillStyle = 'rgba(10,7,14,0.88)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  drawPixelText(result.win ? 'Victory' : 'Defeated', VIEW_W / 2, 110, 50, accent, 'center');
-  drawText(result.win ? 'The Hollow King has fallen.' : 'Fell on wave ' + run.wave + ' of ' + FINAL_WAVE + '.', VIEW_W / 2, 142, 16, COLOR.muted, 'center');
-  const rows: [string, string | number][] = [
-    ['Class', run.cls.name],
-    ['Waves cleared', run.wavesCleared + ' / ' + FINAL_WAVE],
-    ['Bosses defeated', run.bossesKilled + ' / ' + BOSS_COUNT],
-    ['Level reached', run.player.level],
-    ['Kills', run.kills],
-    ['Time', formatTime(result.time)],
-  ];
-  drawPanel(VIEW_W / 2 - 230, 170, 460, 200, COLOR.panel, COLOR.line, 2, accent);
-  rows.forEach(([label, value], i) => {
-    drawText(label, VIEW_W / 2 - 205, 204 + i * 26, 15, COLOR.muted);
-    drawPixelText(String(value), VIEW_W / 2 + 205, 204 + i * 26, 15, COLOR.text, 'right');
-  });
-  drawText('Rewards (shop and skill tree come later): +' + result.gold + ' gold · +' + result.exp + ' Specialist EXP', VIEW_W / 2, 390, 13, COLOR.gold, 'center');
-  if (lastUnlocked.length) {
-    const names = lastUnlocked.map((id) => CLASSES[id]?.name ?? id).join(' and ');
-    drawPixelText('New class unlocked: ' + names + '!', VIEW_W / 2, 486, 22, COLOR.gold, 'center');
-  }
+  drawPixelText(result.win ? 'Victory' : 'Defeated', VIEW_W / 2, 52, 40, accent, 'center');
+  const how = result.win ? 'The Hollow King has fallen.' : 'Fell on wave ' + run.wave + ' of ' + FINAL_WAVE + '.';
+  const summary = how + '  ·  Waves ' + run.wavesCleared + '/' + FINAL_WAVE + '  ·  Bosses ' + run.bossesKilled + '/' + BOSS_COUNT + '  ·  ' + formatTime(result.time);
+  drawText(summary, VIEW_W / 2, 76, 14, COLOR.muted, 'center');
+  const rank = lastRank >= 0 ? '   ·   New high score #' + (lastRank + 1) + '!' : '';
+  drawPixelText('Score ' + groupDigits(liveScore()) + rank, VIEW_W / 2, 106, 22, COLOR.gold, 'center');
+  // scoreboard, then this player's rewards right under it (4 players: 120..280, rewards 290..418)
+  drawScoreboard(120, accent);
+  drawRewards(120 + scoreboardHeight() + 8);
   const b = resultButtons();
   if (net.mode === 'client') {
     drawText('Waiting for the host…', b.again.x + b.again.w / 2, b.again.y + 27, 13, COLOR.dim, 'center');
@@ -452,4 +484,31 @@ export function drawResult(): void {
   }
   drawButton(b.again, 'Play again · Enter', COLOR.teal, COLOR.teal, 28);
   drawButton(b.menu, net.mode === 'host' ? 'Back to room · Esc' : 'Change class · Esc', COLOR.frame, COLOR.text, 28);
+}
+
+// ------------------------------------------------------------ high scores (menu panel)
+
+/** Is the high-score panel open on the menu? (H toggles it.) */
+export let highScoresOpen = false;
+export const setHighScoresOpen = (open: boolean): void => { highScoresOpen = open; };
+
+/** The best runs on this browser. */
+function drawHighScores(): void {
+  const list = getProgress().highScores, w = 620, h = 70 + 30 * Math.max(1, list.length), x = VIEW_W / 2 - w / 2, y = Math.max(40, VIEW_H / 2 - h / 2);
+  ctx.fillStyle = 'rgba(10,7,14,0.85)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  drawPanel(x, y, w, h, COLOR.panel, COLOR.gold, 2);
+  drawPixelText('High scores', VIEW_W / 2, y + 34, 24, COLOR.gold, 'center');
+  if (!list.length) drawText('No runs yet. Finish a run (test mode doesn\'t count) to set a score.', VIEW_W / 2, y + 74, 13, COLOR.muted, 'center');
+  list.forEach((e, i) => {
+    const ry = y + 74 + i * 30, color = i === 0 ? COLOR.gold : COLOR.text;
+    drawPixelText('#' + (i + 1), x + 40, ry, 15, COLOR.dim, 'right');
+    drawPixelText(groupDigits(e.score), x + 150, ry, 16, color, 'right');
+    drawText(CLASSES[e.classId]?.name ?? e.classId, x + 175, ry, 14, color);
+    drawText(e.win ? 'Victory' : 'Wave ' + e.wave, x + 330, ry, 14, e.win ? COLOR.gold : COLOR.muted);
+    drawText(formatTime(e.time), x + 420, ry, 14, COLOR.muted);
+    drawText(e.players > 1 ? e.players + 'P co-op' : 'Solo', x + 480, ry, 14, COLOR.muted);
+    drawText(e.date, x + w - 20, ry, 12, COLOR.dim, 'right');
+  });
+  drawText('H or Esc to close', VIEW_W / 2, y + h + 22, 12, COLOR.dim, 'center');
 }

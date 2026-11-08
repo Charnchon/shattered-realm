@@ -1,10 +1,10 @@
 // ============================================================ world rendering (world space)
-import type { Boss, BossKind, Enemy, EnemyTypeId, Mob } from '../types';
+import type { Boss, BossKind, Enemy, EnemyTypeId, Mob, Player } from '../types';
 import { ctx } from '../core/canvas';
 import { ARENA_H, ARENA_W, COLOR, TAU, VIEW_H, VIEW_W } from '../core/constants';
-import { randRange } from '../core/math';
 import { run, withHero } from '../core/state';
 import { diamondPath, drawBar, drawPixelText } from './primitives';
+import { drawHeroSprite } from './sprites';
 
 const GROUND_TILE = 64;
 
@@ -19,9 +19,22 @@ for (let i = 0; i < 420; i++) {
   });
 }
 
+/**
+ * Screen shake offset: two sine waves per axis instead of fresh random numbers each frame, so it
+ * rolls instead of buzzing, and drawing never consumes the simulation's random numbers.
+ * Uses the wall clock: it's cosmetic, and must keep moving while a joined player waits for snapshots.
+ */
+function shakeOffset(): { x: number; y: number } {
+  if (!run.shake) return { x: 0, y: 0 };
+  const t = performance.now() / 1000, amp = run.shake * 0.5;
+  return {
+    x: amp * (0.6 * Math.sin(t * 47) + 0.4 * Math.sin(t * 83 + 1.3)),
+    y: amp * (0.6 * Math.sin(t * 53 + 2.1) + 0.4 * Math.sin(t * 71 + 0.4)),
+  };
+}
+
 export function drawWorld(): void {
-  const shakeX = run.shake ? randRange(-run.shake, run.shake) * 0.5 : 0;
-  const shakeY = run.shake ? randRange(-run.shake, run.shake) * 0.5 : 0;
+  const { x: shakeX, y: shakeY } = shakeOffset();
   ctx.fillStyle = COLOR.bg;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   ctx.save();
@@ -111,6 +124,21 @@ function drawZones(): void {
 }
 
 /** Outline plus a fill that grows as the attack approaches. */
+/**
+ * A ranged enemy's sight line: thin (it warns of one projectile, not an area), fading in as the shot
+ * nears, and thicker and brighter for the last moment so the player knows when to sidestep.
+ */
+function drawAimLine(x: number, y: number, a: number, len: number, k: number, color: string): void {
+  const last = k > 0.75;
+  ctx.globalAlpha = 0.3 + 0.6 * k;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = last ? 2.5 : 1;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+  ctx.stroke();
+}
+
 function drawTelegraphs(): void {
   for (const t of run.telegraphs) {
     const k = t.t / t.dur;
@@ -130,6 +158,8 @@ function drawTelegraphs(): void {
       ctx.globalAlpha *= 0.5;
       ctx.fillRect(0, -t.w / 2, t.len * k, t.w);
       ctx.restore();
+    } else if (t.kind === 'aim') {
+      drawAimLine(t.x, t.y, t.a, t.len, k, t.color);
     } else if (t.kind === 'cone') {
       ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.arc(t.x, t.y, t.r, t.a - t.arc / 2, t.a + t.arc / 2); ctx.closePath(); ctx.stroke();
       ctx.globalAlpha *= 0.5;
@@ -222,8 +252,8 @@ function drawFloatingTexts(): void {
 function drawPlayer(): void {
   const p = run.player, hero = run.hero, coop = run.heroes.length > 1;
   if (hero.down) { drawDownedHero(); return; }
-  drawLivingHero();
-  if (coop) drawPixelText(hero.name, p.x, p.y - p.r - 10, 10, hero.idx === run.localHero ? COLOR.gold : COLOR.text, 'center');
+  const sprite = drawLivingHero();
+  if (coop) drawPixelText(hero.name, p.x, p.y - (sprite ? 34 : p.r + 10), 10, hero.idx === run.localHero ? COLOR.gold : COLOR.text, 'center');
 }
 
 function drawDownedHero(): void {
@@ -243,11 +273,18 @@ function drawDownedHero(): void {
   drawPixelText(hero.name + ' · down', p.x, p.y - 30, 10, COLOR.red, 'center');
 }
 
-function drawLivingHero(): void {
+/** Draws the living hero. Returns true if it used a sprite (taller than the circle). */
+function drawLivingHero(): boolean {
   const p = run.player;
   const blinking = p.iframes > 0 && p.dashTime <= 0 && Math.floor(run.time * 20) % 2 === 1;
   if (blinking) ctx.globalAlpha = 0.5;
   drawShadow(p.x, p.y + 11, 11, 4, 0.35);
+  if (drawHeroSprite(p, run.classId, run.time)) {
+    drawAimPointer(p, p.hitFlash > 0 ? COLOR.red : run.cls.color);
+    drawBoneShield(p);
+    ctx.globalAlpha = 1;
+    return true;
+  }
   ctx.fillStyle = p.hitFlash > 0 ? '#ffffff' : run.cls.color;
   ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
   ctx.strokeStyle = COLOR.ink;
@@ -262,14 +299,30 @@ function drawLivingHero(): void {
   ctx.closePath();
   ctx.fillStyle = COLOR.text;
   ctx.fill();
-  if (p.boneShield > 0) {
-    ctx.strokeStyle = '#e8e0c8';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 6, 0, TAU); ctx.stroke();
-    ctx.setLineDash([]);
-  }
+  drawBoneShield(p);
   ctx.globalAlpha = 1;
+  return false;
+}
+
+/** A small arrow on the ground showing where a sprite hero is aiming. */
+function drawAimPointer(p: Player, color: string): void {
+  const d = p.r + 12, a = p.face, x = p.x + Math.cos(a) * d, y = p.y + 6 + Math.sin(a) * d;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + Math.cos(a) * 6, y + Math.sin(a) * 6);
+  ctx.lineTo(x + Math.cos(a + 2.4) * 5, y + Math.sin(a + 2.4) * 5);
+  ctx.lineTo(x + Math.cos(a - 2.4) * 5, y + Math.sin(a - 2.4) * 5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawBoneShield(p: Player): void {
+  if (p.boneShield <= 0) return;
+  ctx.strokeStyle = '#e8e0c8';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 6, 0, TAU); ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 function drawShadow(x: number, y: number, rx: number, ry: number, alpha: number): void {
@@ -326,7 +379,50 @@ const ENEMY_SHAPES: Record<EnemyTypeId, ShapeDrawer> = {
       ctx.fillRect(Math.cos(a) * r - 1.5, Math.sin(a) * r - 1.5, 3, 3);
     }
   },
+  boar(e, r, _col, flashing) {
+    ctx.save();
+    ctx.rotate(e.face);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.25, r * 0.9, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = flashing ? '#fff' : '#f2ead8'; // tusks
+    ctx.beginPath(); ctx.moveTo(r * 1.1, -4); ctx.lineTo(r * 1.7, -8); ctx.lineTo(r * 1.15, -1); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(r * 1.1, 4); ctx.lineTo(r * 1.7, 8); ctx.lineTo(r * 1.15, 1); ctx.fill();
+    ctx.restore();
+    if ((e.dazedTime ?? 0) > 0) drawDazedStars(r);
+  },
+  toad(_e, r, col) {
+    ctx.beginPath(); ctx.ellipse(0, 2, r * 1.2, r * 0.85, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = col === '#ffffff' ? col : '#2f6a58'; // spots
+    ctx.beginPath(); ctx.arc(-r * 0.4, 0, 2.5, 0, TAU); ctx.arc(r * 0.35, 4, 2, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ffe066'; // eyes
+    ctx.fillRect(-r * 0.6, -r * 0.7, 3, 3); ctx.fillRect(r * 0.4, -r * 0.7, 3, 3);
+  },
+  wraith(e, r) {
+    if (e.phased) ctx.globalAlpha = 0.3; // ethereal: see-through, can't be hit
+    ctx.beginPath();
+    ctx.arc(0, -r * 0.2, r, Math.PI, 0);
+    for (let i = 0; i <= 4; i++) ctx.lineTo(r - (i * r) / 2, r * (i % 2 ? 0.7 : 1.1));
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1b1024';
+    ctx.fillRect(-r * 0.45, -r * 0.4, 3, 4); ctx.fillRect(r * 0.2, -r * 0.4, 3, 4);
+    ctx.globalAlpha = 1;
+  },
+  caller(_e, r) {
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.7); ctx.lineTo(r, r); ctx.lineTo(-r, r); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#e8e0d0'; // skull face in the hood
+    ctx.beginPath(); ctx.arc(0, -r * 0.2, r * 0.38, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#b07ae0';
+    ctx.fillRect(-r * 0.22, -r * 0.3, 2, 2); ctx.fillRect(r * 0.1, -r * 0.3, 2, 2);
+  },
 };
+
+/** Little stars circling a dazed enemy's head. */
+function drawDazedStars(r: number): void {
+  ctx.fillStyle = COLOR.gold;
+  for (let i = 0; i < 3; i++) {
+    const a = run.time * 5 + (i * TAU) / 3;
+    ctx.fillRect(Math.cos(a) * r * 0.8 - 1.5, -r - 6 + Math.sin(a) * 3 - 1.5, 3, 3);
+  }
+}
 
 function drawEnemy(e: Enemy): void {
   const flashing = e.flash > 0, col = flashing ? '#ffffff' : e.color, r = e.r;

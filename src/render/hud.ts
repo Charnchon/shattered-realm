@@ -8,6 +8,8 @@ import { MAX_RELICS, PART_SHORT, cardDef, relicDef } from '../progression/cards'
 import { xpToNextLevel } from '../world/pickups';
 import { isBossWave } from '../world/waves';
 import { drawBar, drawDashedRect, drawPanel, drawPixelText, drawText } from './primitives';
+import { keysDown } from '../core/input';
+import { drawLiveScoreboard, groupDigits, liveScore } from './scoreboard';
 
 const HUD_BG = 'rgba(20,16,25,0.85)';
 const HUD_PANEL = 'rgba(37,29,49,0.92)';
@@ -26,6 +28,14 @@ export function drawHUD(): void {
   drawAbilityBar();
   drawClassResource();
   drawBanner();
+  drawLiveScore();
+  if (keysDown.tab) drawLiveScoreboard();
+}
+
+/** The run's score, top right, with a reminder that Tab shows everyone's stats. */
+function drawLiveScore(): void {
+  drawPixelText('Score ' + groupDigits(liveScore()), VIEW_W - 54, 30, 16, COLOR.gold, 'right');
+  drawText('Hold Tab · scoreboard', VIEW_W - 54, 46, 10, COLOR.dim, 'right');
 }
 
 /** Class badge with the ultimate charge ring around it. */

@@ -7,12 +7,13 @@ import { keysPressed, mouse, mouseIn } from '../core/input';
 import { clamp } from '../core/math';
 import { hasRun, livingHeroes, localHero, mouseWorld, run, scene, setRun, setScene, showBanner, updateCamera, withHero } from '../core/state';
 import { CLASSES, CLASS_ORDER } from '../classes/registry';
-import { applyInput, readLocalInput } from '../game/controls';
-import { endRun, newRunWith } from '../game/run';
+import { applyInput, offerKey, offerReady, readLocalInput } from '../game/controls';
+import { endRun, newRunWith, runRecord } from '../game/run';
 import { applyPick, tryReroll } from '../progression/cards';
 import { joinButtons, levelCardRects, lobbyButtons, rerollButtonRect, resultButtons } from '../render/screens';
 import { ageVisualEffects } from '../world/effects';
-import { clearLastUnlocked, isClassUnlocked, recordRun, unlockText } from '../meta/progress';
+import { clearLastUnlocked, equippedLoadout, isClassUnlocked, recordRun, unlockText } from '../meta/progress';
+import { cleanLoadout, type EquippedAccessory } from '../meta/accessories';
 import { isPredicting, nextInputSeq, placeLocalHero, predictLocalHero, reconcile, resetPrediction } from './prediction';
 import { decodeSnapshot, encodeSnapshot, parseMessage, type Snapshot } from './snapshot';
 import { CODE_LENGTH, cleanRoomCode, joinRoom, openRoom, randomRoomCode, type Conn, type PeerHandle } from './transport';
@@ -25,6 +26,8 @@ const OFFER_KEYS = ['1', '2', '3'];
 export interface LobbyEntry {
   name: string;
   classId: string;
+  /** The accessories this player brings (checked with `cleanLoadout` on the host). */
+  accessories?: EquippedAccessory[];
   /** Left during a run; dropped when the lobby is next shown. */
   left?: boolean;
 }
@@ -89,7 +92,7 @@ export function hostGame(classId: string, openNetwork = true): void {
   reset();
   net.mode = 'host';
   net.code = randomRoomCode();
-  net.players = [{ name: nameFor(0), classId: playableClass(classId) }];
+  net.players = [{ name: nameFor(0), classId: playableClass(classId), accessories: equippedLoadout() }];
   remotes = [null];
   net.notice = '';
   setScene(SCENE.LOBBY);
@@ -120,7 +123,7 @@ export function acceptConnection(conn: Conn): void {
 }
 
 function onClientMessage(conn: Conn, msg: ReturnType<typeof parseMessage>): void {
-  if (msg.t === 'hello') { addPlayer(conn, String(msg.classId)); return; }
+  if (msg.t === 'hello') { addPlayer(conn, String(msg.classId), cleanLoadout(msg.accessories)); return; }
   const slot = remotes.indexOf(conn);
   if (slot <= 0) return;
   switch (msg.t) {
@@ -152,11 +155,11 @@ function onClientMessage(conn: Conn, msg: ReturnType<typeof parseMessage>): void
   }
 }
 
-function addPlayer(conn: Conn, classId: string): void {
+function addPlayer(conn: Conn, classId: string, accessories: EquippedAccessory[]): void {
   if (remotes.includes(conn)) return;
   if (scene !== SCENE.LOBBY) { kick(conn, 'That game has already started.'); return; }
   if (net.players.length >= MAX_PLAYERS) { kick(conn, 'That room is full (' + MAX_PLAYERS + ' players).'); return; }
-  net.players.push({ name: nameFor(net.players.length), classId: CLASSES[classId] ? classId : CLASS_ORDER[0] });
+  net.players.push({ name: nameFor(net.players.length), classId: CLASSES[classId] ? classId : CLASS_ORDER[0], accessories });
   remotes.push(conn);
   broadcastLobby();
 }
@@ -198,7 +201,7 @@ function broadcastLobby(): void {
 export function startOnlineGame(): void {
   compactLobby();
   broadcastLobby();
-  newRunWith(net.players.map((p) => ({ classId: p.classId, name: p.name })), 0);
+  newRunWith(net.players.map((p) => ({ classId: p.classId, name: p.name, accessories: cleanLoadout(p.accessories) })), 0);
   net.menuOpen = false;
   snapshotTimer = 0;
 }
@@ -258,7 +261,7 @@ export function connectToHost(conn: Conn, classId: string): void {
     try { onHostMessage(parseMessage(text)); } catch (err) { console.error('bad message from the host', err); }
   });
   conn.onClose(() => { if (net.mode === 'client') leaveOnline('Lost the connection to the host (they may have left the room).'); });
-  send(conn, { t: 'hello', classId });
+  send(conn, { t: 'hello', classId, accessories: equippedLoadout() }); // the host checks them
 }
 
 function onHostMessage(msg: ReturnType<typeof parseMessage>): void {
@@ -306,7 +309,7 @@ function applySnapshot(snap: Snapshot): void {
   const shown: SceneId = snap.scene === SCENE.PAUSE ? SCENE.PLAY : snap.scene;
   // the run just ended: save this player's own progress (the host saves theirs in endRun)
   if (shown === SCENE.RESULT && scene !== SCENE.RESULT && next.result && mine) {
-    recordRun({ classId: mine.classId, wavesCleared: next.wavesCleared, bossesKilled: next.bossesKilled, win: next.result.win });
+    recordRun(runRecord(next, mine, next.result.win));
   }
   if (shown === SCENE.PLAY && scene === SCENE.RESULT) clearLastUnlocked();
   if (scene !== shown) setScene(shown);
@@ -319,7 +322,6 @@ function applySnapshot(snap: Snapshot): void {
   }
 }
 
-const offerKey = (offer: NonNullable<Run['offer']>): string => offer.items.map((i) => i.kind + ':' + i.def.id + ':' + i.rarity).join('|');
 
 /** Move everything part of the way from its old to its new position. Shots just keep flying. */
 function smoothPositions(dt: number): void {
@@ -448,6 +450,7 @@ export function updateClientScene(dt: number): void {
     const offer = run.offer;
     if (!offer) return;
     offer.hover = levelCardRects().findIndex((r) => mouseIn(r));
+    if (!offerReady(offer, dt)) return; // a click meant as an attack must not pick a card unread
     let chosen = mouse.leftPressed ? offer.hover : -1;
     OFFER_KEYS.forEach((k, i) => { if (keysPressed[k]) chosen = i; });
     if (chosen >= 0 && offer.items[chosen]) {

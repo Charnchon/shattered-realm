@@ -28,7 +28,8 @@ npm run check        # typecheck + build + test: run before every commit
 
 - Roster: **Traveler, Oathknight, Bounty Hunter, Cleric** open from the start; **Vampire** and **Necromancer** unlock at
   boss milestones (`UNLOCKS` in `src/meta/progress.ts`). The **Merchant was replaced by the Bounty Hunter** (bow + falcon pet).
-- Progress (runs, best wave, unlocks) is saved in the browser's `localStorage`. Test-mode (`DEBUG.god`) and bot runs
+- Progress (runs, unlocks, gold, class EXP, high scores) is saved in the browser's `localStorage` as a versioned save
+  (`src/meta/progress.ts`: `migrate` upgrades old saves; bump `SAVE_VERSION` when the shape changes). Test-mode (`DEBUG.god`) and bot runs
   never count. Tests run with fresh, in-memory progress.
 - Focus: keep the game easy to develop. Prefer small, data-driven changes over new systems.
 

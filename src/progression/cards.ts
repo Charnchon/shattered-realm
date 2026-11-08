@@ -5,8 +5,11 @@ import type {
 import { SCENE } from '../core/constants';
 import { randPick, shuffle, weightedPick } from '../core/math';
 import { hasCard, isEvolved, recalcStats, relicLevel, run, setScene, showBanner, withHero } from '../core/state';
+import { hasAccessory } from '../meta/accessories';
 
 export const OFFER_SIZE = 3;
+/** Weight of a new card from one of the class's favored parts; the Shard of the Crown doubles it. */
+const favoredWeight = (): number => (hasAccessory(run.hero.accessories, 'shard_of_the_crown') ? 2.8 : 1.4);
 export const CARD_MAX_LEVEL = 5;
 const EVOLVED_MAX_LEVEL = 10;
 export const MAX_RELICS = 4;
@@ -142,7 +145,7 @@ function offerPool(exclude: OfferDraft[]): PoolEntry[] {
     if (card) {
       if (card.level < cardMaxLevel(def.id)) pool.push({ draft: { kind: 'card', def }, weight: owned.length >= 3 ? 2.2 : 1.2 });
     } else if (!slotsFull) {
-      pool.push({ draft: { kind: 'card', def }, weight: run.cls.favoredParts.includes(def.part) ? 1.4 : 1 });
+      pool.push({ draft: { kind: 'card', def }, weight: run.cls.favoredParts.includes(def.part) ? favoredWeight() : 1 });
     }
   }
   const relicCount = Object.keys(run.relics).length;

@@ -38,15 +38,18 @@ The engine everything else builds on.
 
 ## Phase 2 · Rewards after every run
 
+> **Superseded by [`progression.md`](progression.md)** (approved direction, Nov 2026): its build steps A–H replace
+> phases 2–4 below.
+
 **Goal:** every run, win or lose, gives something that lasts.
 
-- ⬜ Save gold and Specialist EXP after each run (formulas already exist; plan section 7)
-- ⬜ **Specialist level** per class (cap 15), shown on class select and the result screen
-- ⬜ Result screen: "+120 gold · Vampire Lv 3 → 4", new unlocks, best wave
-- ⬜ **Accessory shop**: the plan's ~20 accessories (upside + trade-off, Lv1–3), 1 slot at start, 2nd for 1,000 gold
-- ⬜ Accessory slots on class select; equipped accessories apply in runs (and in co-op, per player)
-- ⬜ Gold option for unlocking classes (plan: "a milestone **or** gold, so players never get stuck")
-- ⬜ Save versioning and a "reset progress" option in settings
+- ✅ Save gold and Specialist EXP after each run (new formulas in `progression.md`)
+- ✅ **Specialist level** per class (cap 15), shown on class select and the result screen
+- ✅ Result screen: rewards reel (gold, class EXP and level-ups, unlocks, next goal)
+- 🟡 **Accessories** as final-boss loot (changed from a shop, see `progression.md`): 8 + Shard of the Crown, Lv 1–3
+- ✅ 3 accessory slots on class select; equipped accessories apply in runs (and in co-op, per player)
+- ✅ Gold option for unlocking classes (Vampire 500, Necromancer 800)
+- 🟡 Save versioning ✅ (v2, migration, backup); a "reset progress" option in settings ⬜
 
 **Done when:** players have a reason to start the next run (something to buy or level).
 
@@ -111,5 +114,8 @@ The engine everything else builds on.
 | Nov 2026 | **Merchant replaced by Bounty Hunter** (bow + falcon pet): easier to understand, still ranged with a pet |
 | Nov 2026 | Scout renamed **Bounty Hunter** (same kit: bow, falcon, Mark Prey) |
 | Nov 2026 | Unlocks: Vampire = beat Boss 1 as Traveler; Necromancer = beat Boss 2 with any class |
+| Nov 2026 | **Fewer, tougher monsters, each with a role and a weakness** (healer to kill first, archer that telegraphs its shot, imp to pop from range, shield orc to flank) instead of a big horde. Every ranged or area attack shows a warning first |
+| Nov 2026 | Scoreboard: end-of-run player stats and local top-10 high scores. **Online leaderboard deferred** (needs hosting; preferred option when revisited: a Cloudflare Worker kept in one switchable module) |
+| Nov 2026 | **Progression plan** (`progression.md`): accessories drop from the final boss (one per player, up to 3 equipped per run); Slayer achievements give up to +5% damage per monster type; all cards stay available; every map has levels 1–10; co-op gives +10% gold |
 
 Open questions live in section 13 of the design plan.

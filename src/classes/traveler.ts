@@ -39,30 +39,30 @@ interface TravelerState {
 const state = (): TravelerState => run.classState as TravelerState;
 
 const TRAVELER_CARDS: CardDef[] = [
-  { id: 'wanderlust', name: 'Wanderlust', part: 'passive', desc: 'Quick Learner gives +10% more XP, and +5% move speed.', ups: ['effect', 'speed'] },
-  { id: 'sturdy_staff', name: 'Sturdy Staff', part: 'strike', desc: 'Staff hits 25% harder and swings wider.', ups: ['damage', 'range'] },
-  { id: 'quick_jab', name: 'Quick Jab', part: 'strike', desc: 'Faster combo; the 2nd hit pokes far ahead.', ups: ['speed', 'damage'] },
-  { id: 'knock_away', name: 'Knock Away', part: 'strike', desc: 'Staff hits knock back and slow small enemies.', ups: ['range', 'duration'] },
-  { id: 'big_slam', name: 'Big Slam', part: 'heavy', desc: 'Staff Slam shockwave is bigger and stronger.', ups: ['damage', 'range'] },
-  { id: 'pebble_shower', name: 'Pebble Shower', part: 'heavy', desc: 'Staff Slam also throws 3 pebbles.', ups: ['projectiles', 'damage'] },
-  { id: 'ground_crack', name: 'Ground Crack', part: 'heavy', desc: 'Staff Slam leaves a crack that slows enemies.', ups: ['range', 'duration'] },
-  { id: 'dust_roll', name: 'Dust Roll', part: 'dash', desc: 'Your roll kicks up dust that slows enemies.', ups: ['range', 'duration'] },
-  { id: 'rolling_bump', name: 'Rolling Bump', part: 'dash', desc: 'Your roll damages enemies you pass.', ups: ['damage', 'range'] },
-  { id: 'light_feet', name: 'Light Feet', part: 'dash', desc: 'Roll cooldown −20%. +1 charge at Lv5.', ups: ['speed'] },
-  { id: 'loud_rally', name: 'Loud Rally', part: 'ultimate', desc: 'Rally Cry heals 15% more and gives +25% speed for 4 s.', ups: ['heal', 'speed'] },
-  { id: 'rally_wave', name: 'Rally Wave', part: 'ultimate', desc: 'The push becomes a damaging wave.', ups: ['damage', 'range'] },
-  { id: 'hopeful_cry', name: 'Hopeful Cry', part: 'ultimate', desc: 'Rally Cry refunds 25% of its charge.', ups: ['effect'] },
+  { id: 'wanderlust', name: 'Wanderlust', part: 'passive', desc: 'Gain 10% more XP, and move 5% faster.', ups: ['effect', 'speed'] },
+  { id: 'sturdy_staff', name: 'Sturdy Staff', part: 'strike', desc: 'Staff hits deal 25% more damage and swing wider.', ups: ['damage', 'range'] },
+  { id: 'quick_jab', name: 'Quick Jab', part: 'strike', desc: 'Swing 20% faster. Your 2nd hit also pokes a long line ahead.', ups: ['speed', 'damage'] },
+  { id: 'knock_away', name: 'Knock Away', part: 'strike', desc: 'Staff hits push enemies back and slow them for 1 s.', ups: ['range', 'duration'] },
+  { id: 'big_slam', name: 'Big Slam', part: 'heavy', desc: 'Staff Slam deals 40% more damage in a 30% bigger circle.', ups: ['damage', 'range'] },
+  { id: 'pebble_shower', name: 'Pebble Shower', part: 'heavy', desc: 'Staff Slam also throws 3 pebbles forward.', ups: ['projectiles', 'damage'] },
+  { id: 'ground_crack', name: 'Ground Crack', part: 'heavy', desc: 'Staff Slam leaves a crack that slows enemies for 2.5 s.', ups: ['range', 'duration'] },
+  { id: 'dust_roll', name: 'Dust Roll', part: 'dash', desc: 'Rolling leaves a dust cloud that slows enemies inside it.', ups: ['range', 'duration'] },
+  { id: 'rolling_bump', name: 'Rolling Bump', part: 'dash', desc: 'Rolling into enemies damages them and pushes them away.', ups: ['damage', 'range'] },
+  { id: 'light_feet', name: 'Light Feet', part: 'dash', desc: 'Roll recharges 20% faster. At Lv5, gain a 2nd roll.', ups: ['speed'] },
+  { id: 'loud_rally', name: 'Loud Rally', part: 'ultimate', desc: 'Rally Cry heals 45% instead of 30%, then you move 25% faster for 4 s.', ups: ['heal', 'speed'] },
+  { id: 'rally_wave', name: 'Rally Wave', part: 'ultimate', desc: 'Rally Cry’s push also deals heavy damage.', ups: ['damage', 'range'] },
+  { id: 'hopeful_cry', name: 'Hopeful Cry', part: 'ultimate', desc: 'After Rally Cry, your ultimate starts at 25% charge instead of 0%.', ups: ['effect'] },
   {
-    id: 'lucky_coin', name: 'Lucky Coin', part: 'wild', desc: 'Every 8 s, flip a coin: heads = +30% damage for 4 s, tails = heal.', ups: ['heal', 'duration', 'effect'],
-    evo: { name: "Fortune's Favor", desc: 'Every flip gives both, every 5 s.', need: { card: 'wanderlust' }, needText: 'Wanderlust card' },
+    id: 'lucky_coin', name: 'Lucky Coin', part: 'wild', desc: 'Every 8 s, flip a coin. Heads: +30% damage for 4 s. Tails: heal 8 HP.', ups: ['heal', 'duration', 'effect'],
+    evo: { name: "Fortune's Favor", desc: 'Every 5 s, you get both heads and tails.', need: { card: 'wanderlust' }, needText: 'Wanderlust card' },
   },
   {
-    id: 'campfire', name: 'Campfire', part: 'wild', desc: 'Every 10 s, light a fire that burns enemies and heals you nearby.', ups: ['damage', 'heal', 'duration'],
-    evo: { name: 'Hearthfire', desc: 'Bigger fires that last twice as long and heal double.', need: { part: 'ultimate' }, needText: 'any Ultimate card' },
+    id: 'campfire', name: 'Campfire', part: 'wild', desc: 'Every 10 s, light a campfire at your feet. It burns enemies and heals you while you stand in it.', ups: ['damage', 'heal', 'duration'],
+    evo: { name: 'Hearthfire', desc: 'Campfires are bigger, last twice as long and heal double.', need: { part: 'ultimate' }, needText: 'any Ultimate card' },
   },
   {
-    id: 'thrown_stones', name: 'Thrown Stones', part: 'wild', desc: 'Throw a stone at the nearest enemy every 1.2 s.', ups: ['damage', 'projectiles', 'speed'],
-    evo: { name: 'Rockslide', desc: 'Stones fly twice as often and pierce.', need: { part: 'heavy' }, needText: 'any Heavy Strike card' },
+    id: 'thrown_stones', name: 'Thrown Stones', part: 'wild', desc: 'Every 1.2 s, automatically throw a stone at the nearest enemy.', ups: ['damage', 'projectiles', 'speed'],
+    evo: { name: 'Rockslide', desc: 'Throw stones twice as often, and they pass through 2 enemies.', need: { part: 'heavy' }, needText: 'any Heavy Strike card' },
   },
 ];
 
@@ -83,6 +83,7 @@ registerClass({
     'Passive: Quick Learner, +10% XP',
   ],
   keys: { lmb: 'Staff', rmb: 'Slam', spc: 'Roll', q: 'Rally' },
+  abilities: { strike: 'Walking Staff', heavy: 'Staff Slam', dash: 'Roll', ultimate: 'Rally Cry', passive: 'Quick Learner' },
   favoredParts: ['strike', 'wild'],
   cards: TRAVELER_CARDS,
 

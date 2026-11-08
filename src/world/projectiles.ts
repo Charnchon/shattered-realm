@@ -76,7 +76,7 @@ function steerTowardsNearest(s: PlayerShot, turnRate: number, dt: number): void 
 
 function collidePlayerShot(s: PlayerShot): void {
   for (const e of run.enemies) {
-    if (e.dead || s.hitSet.has(e)) continue;
+    if (e.dead || s.hitSet.has(e) || (!e.boss && e.phased)) continue; // shots fly through an ethereal wraith
     if ((e.x - s.x) ** 2 + (e.y - s.y) ** 2 > (e.r + s.r) ** 2) continue;
     s.hitSet.add(e);
     hitEnemy(e, s.dmg, {

@@ -26,6 +26,11 @@ export function dropGem(x: number, y: number, value: number, big: boolean): void
   run.gems.push({ x, y, value, magnetized: false, big });
 }
 
+/** HP in the heal orb an elite drops, and in each of the orbs a boss drops. */
+export const ELITE_HEAL_ORB = 10;
+export const BOSS_HEAL_ORB = 15;
+export const BOSS_HEAL_ORBS = 3;
+
 /** A Trade Coin, or a heal orb worth `value` HP. */
 export function dropCoin(x: number, y: number, value: number, kind: Coin['kind'] = 'coin'): void {
   run.coins.push({ x, y, value, kind });
@@ -101,7 +106,12 @@ function mergeExcessGems(): void {
 
 // ------------------------------------------------------------ experience
 
+/**
+ * XP needed to go from `level` to the next. The first two levels are cheap, so the first cards come early
+ * (bot runs: first card ~13 s instead of ~21 s, second ~25 s instead of ~42 s).
+ */
 export function xpToNextLevel(level: number): number {
+  if (level <= 2) return 3 + 4 * level; // 7, then 11
   return 8 + 5 * level + 0.5 * level * level;
 }
 

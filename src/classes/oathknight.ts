@@ -37,30 +37,30 @@ interface OathState {
 const state = (): OathState => run.classState as OathState;
 
 const OATH_CARDS: CardDef[] = [
-  { id: 'bulwark_vow', name: 'Bulwark Vow', part: 'passive', desc: 'Bulwark returns 30% faster; at Lv3 it holds 2 blocks.', ups: ['speed', 'effect'] },
-  { id: 'holy_blade', name: 'Holy Blade', part: 'strike', desc: 'Every swing sends a wave of light forward.', ups: ['damage', 'range'] },
-  { id: 'heavy_swings', name: 'Heavy Swings', part: 'strike', desc: 'Swings hit 30% harder and knock enemies back.', ups: ['damage', 'range'] },
-  { id: 'quick_strokes', name: 'Quick Strokes', part: 'strike', desc: 'Swing 25% faster.', ups: ['speed'] },
-  { id: 'crushing_slam', name: 'Crushing Slam', part: 'heavy', desc: 'Shield Slam is bigger, stronger, and stuns longer.', ups: ['damage', 'range', 'duration'] },
-  { id: 'shield_toss', name: 'Shield Toss', part: 'heavy', desc: 'Shield Slam also throws your shield, bouncing between 3 enemies.', ups: ['projectiles', 'damage'] },
-  { id: 'rally_slam', name: 'Rally Slam', part: 'heavy', desc: 'Shield Slam heals 2 HP per enemy hit.', ups: ['heal', 'effect'] },
-  { id: 'thunder_charge', name: 'Thunder Charge', part: 'dash', desc: 'Shield Charge goes farther, hits harder and stuns longer.', ups: ['damage', 'range', 'duration'] },
-  { id: 'iron_charge', name: 'Iron Charge', part: 'dash', desc: 'Block all damage for 0.6 s after a Shield Charge.', ups: ['duration', 'effect'] },
-  { id: 'double_charge', name: 'Double Charge', part: 'dash', desc: 'Shield Charge cooldown −20%. +1 charge at Lv5.', ups: ['speed'] },
-  { id: 'vow_of_iron', name: 'Vow of Iron', part: 'ultimate', desc: 'Unbreakable Oath lasts 2 s longer; the final wave is bigger.', ups: ['damage', 'duration'] },
-  { id: 'vengeance_waves', name: 'Vengeance Waves', part: 'ultimate', desc: 'The final wave also fires 3 sword waves at enemies.', ups: ['projectiles', 'damage'] },
-  { id: 'holy_ground', name: 'Holy Ground', part: 'ultimate', desc: 'During the Oath, holy ground burns enemies around you.', ups: ['damage', 'range'] },
+  { id: 'bulwark_vow', name: 'Bulwark Vow', part: 'passive', desc: 'Bulwark recharges 30% faster. At Lv3, it can store 2 blocks.', ups: ['speed', 'effect'] },
+  { id: 'holy_blade', name: 'Holy Blade', part: 'strike', desc: 'Every sword swing also sends a wave of light that hits everything in a line.', ups: ['damage', 'range'] },
+  { id: 'heavy_swings', name: 'Heavy Swings', part: 'strike', desc: 'Sword swings deal 30% more damage and push enemies back.', ups: ['damage', 'range'] },
+  { id: 'quick_strokes', name: 'Quick Strokes', part: 'strike', desc: 'Swing your sword 25% faster.', ups: ['speed'] },
+  { id: 'crushing_slam', name: 'Crushing Slam', part: 'heavy', desc: 'Shield Slam deals 40% more damage, covers a bigger area and stuns twice as long.', ups: ['damage', 'range', 'duration'] },
+  { id: 'shield_toss', name: 'Shield Toss', part: 'heavy', desc: 'Shield Slam also throws your shield, which bounces between 3 enemies.', ups: ['projectiles', 'damage'] },
+  { id: 'rally_slam', name: 'Rally Slam', part: 'heavy', desc: 'Shield Slam heals you 2 HP for each enemy it hits.', ups: ['heal', 'effect'] },
+  { id: 'thunder_charge', name: 'Thunder Charge', part: 'dash', desc: 'Shield Charge goes 40% farther, deals double damage and stuns longer.', ups: ['damage', 'range', 'duration'] },
+  { id: 'iron_charge', name: 'Iron Charge', part: 'dash', desc: 'After a Shield Charge, you take no damage for 0.6 s.', ups: ['duration', 'effect'] },
+  { id: 'double_charge', name: 'Double Charge', part: 'dash', desc: 'Shield Charge recharges 20% faster. At Lv5, gain a 2nd charge.', ups: ['speed'] },
+  { id: 'vow_of_iron', name: 'Vow of Iron', part: 'ultimate', desc: 'Unbreakable Oath lasts 2 s longer, and its final sword wave is bigger and stronger.', ups: ['damage', 'duration'] },
+  { id: 'vengeance_waves', name: 'Vengeance Waves', part: 'ultimate', desc: 'When Unbreakable Oath ends, also fire 3 sword waves at enemies.', ups: ['projectiles', 'damage'] },
+  { id: 'holy_ground', name: 'Holy Ground', part: 'ultimate', desc: 'During Unbreakable Oath, the ground around you burns nearby enemies.', ups: ['damage', 'range'] },
   {
-    id: 'thorns', name: 'Thorns', part: 'wild', desc: 'When you take damage, nearby enemies take damage back.', ups: ['damage', 'effect'],
-    evo: { name: 'Bramble Plate', desc: 'Thorns hit twice as hard, and also when Bulwark blocks.', need: { card: 'bulwark_vow' }, needText: 'Bulwark Vow card' },
+    id: 'thorns', name: 'Thorns', part: 'wild', desc: 'Whenever you take damage, enemies next to you take damage too.', ups: ['damage', 'effect'],
+    evo: { name: 'Bramble Plate', desc: 'Thorns hit twice as hard, and also trigger when Bulwark blocks a hit.', need: { card: 'bulwark_vow' }, needText: 'Bulwark Vow card' },
   },
   {
-    id: 'spinning_shields', name: 'Spinning Shields', part: 'wild', desc: '2 shields orbit you, hitting enemies and blocking shots.', ups: ['projectiles', 'speed', 'range'],
-    evo: { name: 'Aegis Ring', desc: 'Twice the shields, wider orbit.', need: { part: 'dash' }, needText: 'any Dash card' },
+    id: 'spinning_shields', name: 'Spinning Shields', part: 'wild', desc: '2 shields circle you. They hit enemies and destroy enemy arrows and spells they touch.', ups: ['projectiles', 'speed', 'range'],
+    evo: { name: 'Aegis Ring', desc: 'Twice as many shields, in a wider circle.', need: { part: 'dash' }, needText: 'any Dash card' },
   },
   {
-    id: 'light_of_the_order', name: 'Light of the Order', part: 'wild', desc: 'Every 10 s, a holy beam strikes the toughest enemy nearby.', ups: ['damage', 'speed'],
-    evo: { name: "Order's Judgment", desc: 'Every 5 s, beams strike 3 enemies.', need: { card: 'holy_blade' }, needText: 'Holy Blade card' },
+    id: 'light_of_the_order', name: 'Light of the Order', part: 'wild', desc: 'Every 10 s, a holy beam strikes the toughest enemy near you.', ups: ['damage', 'speed'],
+    evo: { name: "Order's Judgment", desc: 'Every 5 s, holy beams strike 3 enemies.', need: { card: 'holy_blade' }, needText: 'Holy Blade card' },
   },
 ];
 
@@ -81,6 +81,7 @@ registerClass({
     'Passive: Bulwark blocks a hit after 4 s calm',
   ],
   keys: { lmb: 'Sweep', rmb: 'Slam', spc: 'Charge', q: 'Oath' },
+  abilities: { strike: 'Sword Sweep', heavy: 'Shield Slam', dash: 'Shield Charge', ultimate: 'Unbreakable Oath', passive: 'Bulwark' },
   favoredParts: ['heavy', 'ultimate'],
   cards: OATH_CARDS,
 

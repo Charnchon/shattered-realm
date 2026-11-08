@@ -1,4 +1,5 @@
 // ============================================================ shared types: the game's data model
+import type { EquippedAccessory } from './meta/accessories';
 
 export interface Point {
   x: number;
@@ -68,7 +69,7 @@ export interface Stats {
 
 // ------------------------------------------------------------ enemies
 
-export type EnemyTypeId = 'slime' | 'mini' | 'goblin' | 'bat' | 'archer' | 'cultist' | 'orc' | 'imp';
+export type EnemyTypeId = 'slime' | 'mini' | 'goblin' | 'bat' | 'archer' | 'cultist' | 'orc' | 'imp' | 'boar' | 'toad' | 'wraith' | 'caller';
 export type BossKind = 'troll' | 'colossus' | 'wyvern' | 'king';
 
 export interface StatusTimers {
@@ -116,6 +117,22 @@ export interface Mob extends EnemyBase {
   shieldBroken: boolean;
   /** Random phase for wobbly movement and confusion. */
   wobble: number;
+  /**
+   * Seconds left of a telegraphed action (an archer drawing its bow, a healer channelling, an imp's
+   * fuse). Unset or 0 = none. The warning itself is `windTelegraph`, which online clients see.
+   */
+  windup?: number;
+  /** Direction locked in when an archer starts aiming: the shot flies exactly along its warning line. */
+  windAngle?: number;
+  /** HP when a healer started channelling: any damage after that interrupts it. */
+  windHp?: number;
+  windTelegraph?: Telegraph;
+  /** Boar: seconds left of a charge in progress, then seconds it stays dazed (and takes extra damage). */
+  chargeTime?: number;
+  dazedTime?: number;
+  /** Wraith: ethereal (can't be hurt, can't hurt) while true; `phaseTimer` counts down to the next switch. */
+  phased?: boolean;
+  phaseTimer?: number;
 }
 
 export type BossState = 'chase' | 'aim' | 'charge' | 'recover' | 'slam' | 'breath' | 'dive' | 'land' | 'slash';
@@ -304,10 +321,11 @@ interface TelegraphBase extends Point {
   /** Player telegraphs survive a boss's death. */
   friendly?: boolean;
 }
-/** Warning shape: circle, line (from x,y at angle a) or cone. */
+/** Warning shape: circle, line (from x,y at angle a), cone, or aim (a thin sight line for a single shot). */
 export type TelegraphSpec =
   | (TelegraphBase & { kind: 'circle'; r: number })
   | (TelegraphBase & { kind: 'line'; a: number; len: number; w: number })
+  | (TelegraphBase & { kind: 'aim'; a: number; len: number })
   | (TelegraphBase & { kind: 'cone'; a: number; r: number; arc: number });
 /** A live telegraph; `t` is its elapsed time. */
 export type Telegraph = TelegraphSpec & { t: number };
@@ -447,6 +465,11 @@ export interface ClassDef {
   kit: string[];
   /** Ability bar labels. */
   keys: { lmb: string; rmb: string; spc: string; q: string };
+  /**
+   * Full ability names, shown on level-up cards ("Upgrades: Mark Prey · Right click") so players
+   * know at a glance which ability a card improves. Wild cards add something new instead.
+   */
+  abilities: Record<Exclude<CardPart, 'wild'>, string>;
   /** Card parts offered a bit more often. */
   favoredParts: CardPart[];
   cards: CardDef[];
@@ -503,8 +526,6 @@ export interface Banner {
 
 export interface RunResult {
   win: boolean;
-  gold: number;
-  exp: number;
   time: number;
 }
 
@@ -556,6 +577,21 @@ export interface Hero {
   gone: boolean;
   /** Online: number of the latest input from this player the host has applied (for prediction). */
   ack?: number;
+  /** This player's numbers for the end-of-run scoreboard. */
+  score: HeroScore;
+  /** Accessories this player brought into the run (applied in `recalcStats`). */
+  accessories: EquippedAccessory[];
+}
+
+/** One player's contribution to a run (end-of-run scoreboard). */
+export interface HeroScore {
+  kills: number;
+  /** Damage dealt to enemies (not counting overkill). */
+  damage: number;
+  /** Damage taken after armor. */
+  taken: number;
+  /** Teammates this player revived. */
+  revives: number;
 }
 
 /** Everything about the current run. */

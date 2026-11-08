@@ -1,23 +1,28 @@
 // ============================================================ combat: damage, healing, status
-import type { Enemy, Hero, HitOptions } from '../types';
+import type { Enemy, Hero, HitOptions, Mob } from '../types';
 import { COLOR, SCENE } from '../core/constants';
 import { angleDiff, randRange, segmentDistSq } from '../core/math';
 import { DEBUG, livingHeroes, run, scene, showBanner, totalArmor, withHero } from '../core/state';
 import { endRun } from '../game/run';
 import { onBossDefeated } from './bosses';
 import { addFloatingText, spawnBurst } from './effects';
-import { ENEMY_TYPES, enemiesInRadius, spawnEnemy } from './enemies';
-import { dropGem } from './pickups';
+import { DAZED_DAMAGE_MUL, ENEMY_TYPES, IMP_BLAST, cancelWindup, enemiesInRadius, spawnEnemy } from './enemies';
+import { ELITE_HEAL_ORB, dropCoin, dropGem } from './pickups';
 
 const SHIELD_BLOCK_MUL = 0.2;
 const SHIELD_ARC = 1.0;
 const BOSS_STAGGER_PER_HEAVY = 14;
+/** Ultimate charge (%) per kill. Doubled from the plan's 1% / 5% because waves now have about half as many, tougher enemies. */
+const ULT_PER_KILL = 2;
+const ULT_PER_ELITE_KILL = 10;
 
 /** Deal `amount` base damage to an enemy. Returns the final damage dealt. */
 export function hitEnemy(e: Enemy | null, amount: number, opts: HitOptions = {}): number {
   if (!e || e.dead) return 0;
+  if (!e.boss && e.phased) return 0; // an ethereal wraith can't be hurt
   const stats = run.stats, cls = run.cls;
   let damage = amount * stats.damage;
+  if (!e.boss && (e.dazedTime ?? 0) > 0) damage *= DAZED_DAMAGE_MUL; // a dazed boar is open
   if (cls.damageMod) damage *= cls.damageMod(e, opts);
 
   let crit = false;
@@ -42,6 +47,7 @@ export function hitEnemy(e: Enemy | null, amount: number, opts: HitOptions = {})
     e.knockY += Math.sin(a) * opts.knock * 6;
   }
 
+  run.hero.score.damage += Math.min(damage, Math.max(0, e.hp)); // overkill doesn't count
   e.hp -= damage;
   e.flash = 0.08;
   if (!opts.silent && damage >= 0.5) {
@@ -78,15 +84,29 @@ export function killEnemy(e: Enemy, opts: HitOptions = {}): void {
   if (e.dead) return;
   e.dead = true;
   run.kills++;
+  run.hero.score.kills++; // the current hero landed the killing blow
   spawnBurst(e.x, e.y, e.color, e.elite ? 14 : 7, 90);
   if (e.boss) { onBossDefeated(e); return; }
   dropGem(e.x, e.y, e.xp * (1 + 0.3 * (run.wave - 1)), e.elite);
-  addUlt((e.elite ? 5 : 1) * run.stats.ultRate);
+  // every class can recover HP: elites drop a heal orb (it goes to whoever picks it up)
+  if (e.elite) dropCoin(e.x, e.y, ELITE_HEAL_ORB, 'heal');
+  addUlt((e.elite ? ULT_PER_ELITE_KILL : ULT_PER_KILL) * run.stats.ultRate);
+  cancelWindup(e); // a dead archer/healer/imp's warning disappears with it
   const def = ENEMY_TYPES[e.type];
+  if (def.bomber) blowUpImp(e);
   if (def.splitInto && run.wave >= 4) {
     for (let i = 0; i < 2; i++) spawnEnemy(def.splitInto, e.x + randRange(-8, 8), e.y + randRange(-8, 8), false);
   }
   if (run.cls.onKill) run.cls.onKill(e, opts);
+}
+
+/** Damage a killed imp deals to the enemies around it (scaled by the killer's damage, like any hit). */
+const IMP_CHAIN_DAMAGE = 30;
+
+/** Killing an imp before its fuse runs out makes it explode on its own side. */
+function blowUpImp(e: Mob): void {
+  spawnBurst(e.x, e.y, '#ff7a4a', 16, 140);
+  for (const o of enemiesInRadius(e.x, e.y, IMP_BLAST)) if (o !== e) hitEnemy(o, IMP_CHAIN_DAMAGE, { noCrit: true });
 }
 
 /** Make an enemy bleed. Keeps the stronger of the current and new bleed. */
@@ -156,6 +176,7 @@ export function hurtPlayer(amount: number): void {
   if (run.cls.absorb) damage = run.cls.absorb(damage);
   if (damage <= 0) { p.iframes = 0.2; return; }
   p.hp -= damage;
+  run.hero.score.taken += damage;
   p.hitFlash = 0.15;
   p.iframes = 0.3;
   run.shake = Math.min(8, run.shake + 3);
@@ -171,6 +192,7 @@ export function hurtPlayerOverTime(amount: number): void {
   let damage = amount;
   if (run.cls.absorb) damage = run.cls.absorb(damage);
   p.hp -= damage;
+  run.hero.score.taken += Math.max(0, damage);
   p.hitFlash = 0.08;
   checkPlayerDeath();
 }

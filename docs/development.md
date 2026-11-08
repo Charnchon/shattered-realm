@@ -82,6 +82,17 @@ Write tests against `window.__SR`; add new hooks in `installTestHooks` (`src/gam
 The class select row fits 6 tiles; a 7th class needs a narrower tile or a second row (see `MENU_TILE` in `render/screens.ts`).
 New classes are open from the start unless you add an unlock rule (next recipe).
 
+### Hero sprites (placeholder art)
+
+Player classes are drawn from `assets/sprites/heroes.png` (free CC0 art, see `assets/sprites/CREDITS.md`) by
+`src/render/sprites.ts`, which is the only file that knows about them. A class without a row in `HERO_ROWS`, or any
+failure to load the image, falls back to the coloured circle. To give a new class a sprite, add its 11 frames as a
+new row in `heroes.png` and a line in `HERO_ROWS`.
+
+- Switch off: `SPRITES_ENABLED = false` in `src/render/sprites.ts`.
+- Remove: delete `src/render/sprites.ts` and `assets/sprites/`, and the `drawHeroSprite` import + call in
+  `src/render/world.ts`.
+
 ### Lock a class behind a milestone
 
 Add an entry to `UNLOCKS` in `src/meta/progress.ts` (`classId`, the text players see, and `isMet(run)` using
@@ -95,8 +106,8 @@ Read it in the class hooks with `hasCard(id)`, `cardMul(id, 'damage')`, `cardExt
 
 ### New enemy
 
-Add its id to `EnemyTypeId` in `types.ts`, an entry to `ENEMY_TYPES` (traits: `undead`, `shot`, `shield`, `turnRate`,
-`bomber`, `splitInto`), a weight in `spawnWeights()` and a shape in `ENEMY_SHAPES` (`render/world.ts`). TypeScript
+Add its id to `EnemyTypeId` in `types.ts`, an entry **at the end** of `ENEMY_TYPES` (a `role`, a `weakness`, and traits: `undead`, `shot`, `healer`,
+`shield`, `turnRate`, `bomber`, `splitInto`, `charge`, `mortar`, `phase`, `summon`, `maxAlive`), a weight in `spawnWeights()` and a shape in `ENEMY_SHAPES` (`render/world.ts`). TypeScript
 points out anything you forget. The snapshot sends enemy types by index into `ENEMY_TYPES`, so nothing else is needed
 for online play.
 
@@ -104,6 +115,12 @@ for online play.
 
 Add its kind to `BossKind`, an entry to `BOSS_DEFS`, then `BOSS_AI[kind]` and `BOSS_SHAPES[kind]`. Boss AI runs as its
 target hero (`run.player` is the target). Use `hurtHeroesWhere` for attacks that should hit every hero in range.
+
+### New accessory
+
+Add an entry to `ACCESSORIES` in `src/meta/accessories.ts`: `rarity` (sets its drop weight and gold value), an upside
+for Lv 1 / 2 / 3, a trade-off, and `apply(stats, level)` (runs in `recalcStats`). It joins the final boss's loot table
+and the accessories panel (E) by itself. Keep a real trade-off: accessories count toward the 30% meta power budget.
 
 ### New relic or stat card
 

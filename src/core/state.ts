@@ -2,6 +2,7 @@
 import type { Hero, Point, RelicId, Run, SceneId, Stats, UpgradeType } from '../types';
 import { ARENA_H, ARENA_W, SCENE, VIEW_H, VIEW_W } from './constants';
 import { clamp } from './math';
+import { applyAccessories } from '../meta/accessories';
 
 /**
  * State of the current run. Built by `newRun`, so only read it from gameplay
@@ -130,6 +131,7 @@ export function recalcStats(): void {
     dashCooldown: 1.5,
     heavyCooldown: run.cls.heavyCooldown,
   };
+  applyAccessories(stats, run.hero.accessories);
   if (run.cls.modifyStats) run.cls.modifyStats(stats);
   stats.critChance = Math.min(STAT_CAPS.critChance, stats.critChance);
   stats.moveSpeed = Math.min(stats.moveSpeed, base.moveSpeed * STAT_CAPS.moveSpeedMul);
