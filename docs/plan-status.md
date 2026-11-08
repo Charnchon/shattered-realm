@@ -74,6 +74,7 @@ The plan's `CLAUDE.md` rules in section 11 (`npm run validate`, `npm run check-a
 | XP curve `10 + 6L + 0.6L²` | 🟡 `8 + 5L + 0.5L²`, levels 1–2 cost 7 and 11 | Tuned for the prototype; the cheap first levels bring the first card in ~13 s |
 | 16 class cards per class, 5 slots, 6th after Boss 2, upgrades by rarity, evolutions | ✅ | |
 | 8 shared relics, 4 relic slots; stat cards as filler | ✅ | |
+| ➕ **Mutations** (not in the plan): cards that change *how* an ability works, 2 per Strike/Heavy/Dash/Ultimate, only one per ability per run (`mutation: true` on `CardDef`) | 🟡 | Traveler and Vampire have 8 each (24 cards total); the other 4 classes next. Synergy relics are the planned follow-up |
 | First offer = 3 different parts; owned cards weighted up once 3+ slots used | ✅ | |
 | Rarity weights Common 60 / Rare 28 / Epic 10 / Legendary 2 | 🟡 | Common/Rare/Epic only (Luck shifts them); Legendary is only for evolutions |
 | 1 free reroll | ✅ | Trade Coin rerolls left with the Merchant; the `rerollCost` hook remains for later |

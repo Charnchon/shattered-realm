@@ -60,6 +60,16 @@ export function upgradeLabel(up: Upgrade): string {
 }
 
 export const cardDef = (id: string): CardDef => run.cls.cards.find((c) => c.id === id) as CardDef;
+
+/** The mutation the current hero holds for this ability, if any (one per ability per run). */
+export const mutationFor = (part: CardPart): CardDef | undefined =>
+  Object.keys(run.cards).map(cardDef).find((d) => d.mutation && d.part === part);
+
+/** A card the current hero can never be offered: a second mutation for an ability that already has one. */
+const blockedMutation = (def: CardDef): boolean => !!def.mutation && !run.cards[def.id] && !!mutationFor(def.part);
+
+/** New mutations show up a little more often than plain cards, so most runs see a few. */
+const MUTATION_WEIGHT = 1.3;
 const cardMaxLevel = (id: string): number => (isEvolved(id) ? EVOLVED_MAX_LEVEL : CARD_MAX_LEVEL);
 
 /** A max-level card whose evolution requirement (card, part or relic) is met. */
@@ -128,7 +138,7 @@ function rollNewCardUpgrades(def: CardDef, rarity: RarityId): Upgrade[] {
 function firstOfferDrafts(): OfferDraft[] {
   const drafts: OfferDraft[] = [];
   for (const part of shuffle(CARD_PARTS.slice())) {
-    const candidates = run.cls.cards.filter((d) => d.part === part && !run.cards[d.id]);
+    const candidates = run.cls.cards.filter((d) => d.part === part && !run.cards[d.id] && !blockedMutation(d));
     if (candidates.length) drafts.push({ kind: 'card', def: randPick(candidates) });
     if (drafts.length === OFFER_SIZE) break;
   }
@@ -140,12 +150,13 @@ function offerPool(exclude: OfferDraft[]): PoolEntry[] {
   const owned = Object.keys(run.cards), slotsFull = owned.length >= run.cardSlots;
   const pool: PoolEntry[] = [];
   for (const def of run.cls.cards) {
-    if (exclude.some((d) => d.def === def)) continue;
+    if (exclude.some((d) => d.def === def) || blockedMutation(def)) continue;
     const card = run.cards[def.id];
     if (card) {
       if (card.level < cardMaxLevel(def.id)) pool.push({ draft: { kind: 'card', def }, weight: owned.length >= 3 ? 2.2 : 1.2 });
     } else if (!slotsFull) {
-      pool.push({ draft: { kind: 'card', def }, weight: run.cls.favoredParts.includes(def.part) ? favoredWeight() : 1 });
+      const base = run.cls.favoredParts.includes(def.part) ? favoredWeight() : 1;
+      pool.push({ draft: { kind: 'card', def }, weight: def.mutation ? base * MUTATION_WEIGHT : base });
     }
   }
   const relicCount = Object.keys(run.relics).length;

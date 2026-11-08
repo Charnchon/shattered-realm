@@ -396,6 +396,11 @@ export interface CardDef {
   desc: string;
   /** Upgrade types this card can roll. */
   ups: CardUpgradeType[];
+  /**
+   * A mutation changes *how* its ability works (Strike, Heavy, Dash or Ultimate) instead of making it
+   * stronger. A hero can hold only one mutation per ability in a run, so each run picks a different shape.
+   */
+  mutation?: boolean;
   evo?: {
     name: string;
     desc: string;

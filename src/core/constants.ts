@@ -24,6 +24,8 @@ export const COLOR = {
   gold: '#f0b94d',
   teal: '#5fd3c6',
   ember: '#e0623e',
+  /** Mutation cards (they change how an ability works). */
+  mutation: '#e889ff',
   purple: '#b98cf0',
   red: '#e0623e',
   green: '#7fd06a',

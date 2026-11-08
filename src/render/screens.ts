@@ -70,11 +70,16 @@ const PART_KEY: Record<CardPart, string> = {
   strike: 'Left click', heavy: 'Right click', dash: 'Space', ultimate: 'Q', passive: 'Always on', wild: 'Always on',
 };
 
+/** The ability a card part belongs to, e.g. 'Blood Claws' (wild cards have none). */
+const abilityName = (part: CardPart): string => (part === 'wild' ? 'wild power' : run.cls.abilities[part]);
+
 /** The small tag at the top of a card: the part and its button, e.g. "HEAVY STRIKE · RIGHT CLICK". */
 function offerTag(item: OfferItem): string {
   switch (item.kind) {
     case 'evo': return 'Evolution';
-    case 'card': return item.def.part === 'wild' ? 'Wild · new power' : PART_LABEL[item.def.part] + ' · ' + PART_KEY[item.def.part];
+    case 'card':
+      if (item.def.mutation) return 'Mutation · ' + PART_KEY[item.def.part];
+      return item.def.part === 'wild' ? 'Wild · new power' : PART_LABEL[item.def.part] + ' · ' + PART_KEY[item.def.part];
     case 'relic': return 'Relic';
     case 'stat': return 'Stat boost';
   }
@@ -83,7 +88,9 @@ function offerTag(item: OfferItem): string {
 /** The line under the name that answers "what does this improve?", e.g. "Upgrades: Mark Prey". */
 function offerTarget(item: OfferItem): string {
   switch (item.kind) {
-    case 'card': return item.def.part === 'wild' ? 'Adds a new power' : 'Upgrades: ' + run.cls.abilities[item.def.part];
+    case 'card':
+      if (item.def.mutation) return 'Changes: ' + abilityName(item.def.part);
+      return item.def.part === 'wild' ? 'Adds a new power' : 'Upgrades: ' + run.cls.abilities[item.def.part];
     case 'evo': return 'Evolves your ' + item.def.name + ' card';
     case 'relic': return 'A relic: works for every class';
     case 'stat': return 'A small permanent boost';
@@ -96,6 +103,7 @@ function offerDetails(item: OfferItem): { levelLine: string; upgradeLine: string
     case 'card': {
       const def = item.def;
       let desc = def.desc; // always shown, so upgrades remind you what the card does
+      if (def.mutation && item.isNew) desc += ' Only one ' + abilityName(def.part) + ' mutation per run.';
       if (def.evo && !run.cards[def.id]?.evolved) {
         desc += item.to >= CARD_MAX_LEVEL && !item.isNew ? ' Evolves now if you have ' + def.evo.needText + '.' : ' Evolves at Lv5 with ' + def.evo.needText + '.';
       }
@@ -123,12 +131,14 @@ function drawOfferCard(item: OfferItem, rect: Rect, index: number, hovered: bool
   ctx.strokeStyle = COLOR.frame;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(cx - tagW / 2, y0 + 38, tagW, 18);
-  drawPixelText(tag, cx, y0 + 51, 11, COLOR.muted, 'center');
+  const mutation = item.kind === 'card' && !!item.def.mutation;
+  if (mutation) { ctx.strokeStyle = COLOR.mutation; ctx.strokeRect(cx - tagW / 2, y0 + 38, tagW, 18); }
+  drawPixelText(tag, cx, y0 + 51, 11, mutation ? COLOR.mutation : COLOR.muted, 'center');
 
   // text flows down the card, so long names and descriptions never overlap
   const name = item.kind === 'evo' ? (item.def.evo?.name ?? item.def.name) : item.def.name;
   let y = drawWrappedText(name, cx, y0 + 82, rect.w - 24, 23, 20, rarity.tier > 1 ? rarity.color : COLOR.text, 'center', FONT_PIXEL);
-  y = drawWrappedText(offerTarget(item), cx, y + 21, rect.w - 20, 16, 13, COLOR.gold, 'center') + 4;
+  y = drawWrappedText(offerTarget(item), cx, y + 21, rect.w - 20, 16, 13, mutation ? COLOR.mutation : COLOR.gold, 'center') + 4;
 
   const { levelLine, upgradeLine, desc } = offerDetails(item);
   const isNew = levelLine.startsWith('NEW');
@@ -448,7 +458,7 @@ export function drawPause(): void {
     const def = cardDef(id), card = run.cards[id];
     const name = card.evolved && def.evo ? def.evo.name : def.name;
     drawText(name + '  Lv ' + card.level, right + 20, y, 13, card.evolved ? COLOR.gold : COLOR.text);
-    drawText(PART_LABEL[def.part], right + 330, y, 11, COLOR.dim, 'right');
+    drawText(PART_LABEL[def.part] + (def.mutation ? ' mutation' : ''), right + 330, y, 11, def.mutation ? COLOR.mutation : COLOR.dim, 'right');
     y += 21;
   }
   for (const id of Object.keys(run.relics) as RelicId[]) {

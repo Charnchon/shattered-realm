@@ -109,7 +109,7 @@ function drawBestiary(): void {
   });
 }
 
-/** The highlighted class's 16 cards: found ones by name, evolutions once made. */
+/** The highlighted class's cards (16, plus mutations): found ones by name, evolutions once made. */
 function drawCards(classId: string): void {
   const cls = CLASSES[classId], p = getProgress(), w = 205, h = 46, gap = 6, x0 = PANEL.x + 24, y0 = PANEL.y + 112;
   if (!cls) return;
@@ -121,7 +121,7 @@ function drawCards(classId: string): void {
     const has = p.codex.cards.includes(classId + ':' + card.id), evolved = p.codex.evolved.includes(classId + ':' + card.id);
     drawPanel(x, y, w, h, 'rgba(20,16,25,0.8)', evolved ? COLOR.gold : has ? COLOR.teal : COLOR.line, 1);
     drawText(has ? card.name : '???', x + 10, y + 18, 13, has ? COLOR.text : COLOR.dim);
-    drawText(card.part, x + w - 10, y + 18, 10, COLOR.dim, 'right');
+    drawText(card.part + (card.mutation ? ' · mutation' : ''), x + w - 10, y + 18, 10, card.mutation ? COLOR.mutation : COLOR.dim, 'right');
     if (card.evo) drawText(evolved ? 'Evolved: ' + card.evo.name : 'Evolution: ???', x + 10, y + 36, 10, evolved ? COLOR.gold : COLOR.dim);
   });
 }

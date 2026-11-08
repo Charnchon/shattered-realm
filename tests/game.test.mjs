@@ -103,13 +103,127 @@ test('cards: every class names its abilities, and every card text is short and s
     for (const part of ['strike', 'heavy', 'dash', 'ultimate', 'passive']) {
       assert.ok(cls.abilities[part], `${id}: ability name for ${part}`);
     }
-    assert.equal(cls.cards.length, 16, `${id} has 16 cards`);
+    assert.equal(cls.cards.filter((c) => !c.mutation).length, 16, `${id} has 16 regular cards`);
+    const mutations = cls.cards.filter((c) => c.mutation);
+    if (mutations.length) {
+      for (const part of ['strike', 'heavy', 'dash', 'ultimate']) {
+        assert.equal(mutations.filter((c) => c.part === part).length, 2, `${id}: 2 mutations for ${part}`);
+      }
+    }
     for (const card of cls.cards) {
       assert.ok(card.desc.length >= 20 && card.desc.length <= 110, `${id}/${card.id}: description should be 20-110 characters (${card.desc.length})`);
       assert.match(card.desc, /\.$|\)$/, `${id}/${card.id}: description ends with a full stop`);
       if (card.evo) assert.ok(card.evo.desc.length <= 90, `${id}/${card.id}: evolution text is short`);
     }
   }
+});
+
+// ------------------------------------------------------------ mutations
+
+const MUTATION_CLASSES = ['traveler', 'vampire'];
+
+/** Give the current hero a card at `level` through the normal pick path. */
+function grantCard(sr, id, level = 3) {
+  const def = sr.run.cls.cards.find((c) => c.id === id);
+  for (let lv = 0; lv < level; lv++) {
+    sr.run.pendingLevelUps++;
+    sr.applyPick({ kind: 'card', def, rarity: 'common', isNew: lv === 0, from: lv, to: lv + 1, ups: lv ? [{ type: def.ups[0], strength: 1 }] : [] });
+  }
+}
+
+/** A bot plays `seconds` holding `cardId` (god mode, random picks). Returns the run. */
+function playHolding(classId, cardId, seconds, seed = 3) {
+  const game = loadGame({ seed });
+  const { sr, randomIndex } = game;
+  sr.DEBUG.god = true;
+  sr.DEBUG.bot = true;
+  sr.newRun(classId);
+  grantCard(sr, cardId);
+  for (let t = 0, frame = 0; t < seconds;) {
+    if (sr.scene === 'levelup') { const items = sr.run.offer.items; sr.applyPick(items[randomIndex(items.length)]); continue; }
+    if (sr.scene !== 'play') break;
+    sr.run.player.ult = Math.max(sr.run.player.ult, frame % 600 === 0 ? 100 : 0); // use the ultimate every 10 s
+    sr.step(1 / 60);
+    t += 1 / 60;
+    if (++frame % 30 === 0) sr.render();
+  }
+  return sr.run;
+}
+
+test('mutations: you can hold only one per ability, so the rival never shows up once you have one', () => {
+  const { sr } = loadGame({ seed: 5 });
+  for (const classId of MUTATION_CLASSES) {
+    sr.newRun(classId);
+    let seen = 0;
+    for (let i = 0; i < 100; i++) { sr.makeOffer(); seen += sr.run.offer.items.filter((it) => it.kind === 'card' && it.def.mutation).length; }
+    assert.ok(seen > 30, `${classId}: mutations show up in normal offers (${seen} in 100 offers)`);
+    const mutations = sr.run.cls.cards.filter((c) => c.mutation);
+    for (const part of ['strike', 'heavy', 'dash', 'ultimate']) grantCard(sr, mutations.find((c) => c.part === part).id, 1);
+    sr.run.cardSlots = 9; // room for more new cards, so only the rule keeps the rivals out
+    for (let i = 0; i < 300; i++) {
+      sr.makeOffer();
+      for (const item of sr.run.offer.items) {
+        if (item.kind !== 'card' || !item.def.mutation) continue;
+        assert.ok(sr.run.cards[item.def.id], `${classId}: offered a second ${item.def.part} mutation (${item.def.id})`);
+      }
+    }
+  }
+});
+
+for (const classId of MUTATION_CLASSES) {
+  test(`mutations: a ${classId} bot plays with each mutation without errors and deals damage`, () => {
+    const { sr } = loadGame();
+    const ids = sr.CLASSES[classId].cards.filter((c) => c.mutation).map((c) => c.id);
+    for (const id of ids) {
+      const run = playHolding(classId, id, 25);
+      assert.ok(run.cards[id], `${id} is held`);
+      assert.ok(run.hero.score.damage > 0, `${id}: the bot dealt damage`);
+      assert.ok(Number.isFinite(run.player.hp) && Number.isFinite(run.player.x), `${id}: hero state is valid`);
+    }
+  });
+}
+
+test('mutations: dash mutations move the same way in dash() and dashShape() (online prediction)', () => {
+  const { sr } = loadGame();
+  for (const [classId, id] of [['traveler', 'backflip'], ['traveler', 'tumble'], ['vampire', 'bat_scatter'], ['vampire', 'crimson_pounce']]) {
+    sr.newRun(classId);
+    grantCard(sr, id, 2);
+    sr.run.player.face = 0.7;
+    const shape = sr.run.cls.dashShape(1, 0), used = sr.run.cls.dash(1, 0);
+    assert.deepEqual(used, shape, `${classId}/${id}`);
+  }
+});
+
+test('mutations: Backflip flips away from your aim; Last Stand keeps you at 1 HP; Sanguine Nova costs HP', () => {
+  const { sr } = loadGame();
+  sr.DEBUG.god = false;
+  sr.newRun('traveler');
+  sr.run.spawnBudget = -1e9;
+  for (const e of sr.run.enemies) e.dead = true;
+  grantCard(sr, 'backflip', 1);
+  const shape = sr.run.cls.dashShape(1, 0);
+  assert.ok(Math.abs(Math.cos(shape.ang - (sr.run.player.face + Math.PI)) - 1) < 1e-9, 'backflip goes opposite the aim');
+  grantCard(sr, 'last_stand', 1);
+  sr.run.cls.ult();
+  sr.run.player.iframes = 0;
+  sr.hurtHero(sr.run.hero, 1e6);
+  assert.equal(sr.run.player.hp, 1, 'Last Stand: a huge hit leaves you at 1 HP');
+
+  sr.newRun('vampire');
+  for (const e of sr.run.enemies) e.dead = true;
+  grantCard(sr, 'sanguine_nova', 1);
+  const before = sr.run.player.hp;
+  sr.run.cls.heavy();
+  assert.ok(sr.run.player.hp < before, 'Sanguine Nova costs HP when nothing is hit');
+});
+
+test('mutations: Blood Whip pulls an enemy toward the Vampire', () => {
+  const { sr } = quietArena('vampire');
+  grantCard(sr, 'blood_whip', 1);
+  const p = sr.run.player, goblin = sr.spawnEnemy('orc', p.x + 120, p.y, false);
+  p.face = 0;
+  sr.run.cls.strike(1 / 60, true);
+  assert.ok(goblin.knockX < 0, 'knocked back toward the hero (to the left)');
 });
 
 test('sprites: every class draws its own row of the hero sheet, facing and walking', () => {

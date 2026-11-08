@@ -125,7 +125,7 @@ function drawCardSlots(): void {
     const id = owned[i];
     if (i >= run.cardSlots) { drawDashedRect(x + 1, y + 1, size - 2, size - 2, [3, 3], COLOR.frame, 1.5); continue; }
     if (!id) { drawPanel(x, y, size, size, 'rgba(20,16,25,0.7)', COLOR.line, 2); continue; }
-    const def = cardDef(id), card = run.cards[id], color = card.evolved ? COLOR.gold : COLOR.teal;
+    const def = cardDef(id), card = run.cards[id], color = card.evolved ? COLOR.gold : def.mutation ? COLOR.mutation : COLOR.teal;
     drawPanel(x, y, size, size, 'rgba(37,29,49,0.95)', color, 2);
     drawPixelText(PART_SHORT[def.part], x + size / 2, y + 15, 10, color, 'center');
     drawPixelText(String(card.level), x + size / 2, y + 30, 13, COLOR.text, 'center');

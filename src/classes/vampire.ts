@@ -3,10 +3,11 @@ import type { CardDef, DashOverride, Enemy, HitOptions, Point, Stats } from '../
 import { ARENA_H, ARENA_W, COLOR, TAU } from '../core/constants';
 import { ctx } from '../core/canvas';
 import { clamp, degToRad, distSq, randPick, randRange } from '../core/math';
-import { cardExtraProjectiles, cardLevel, cardMul, hasCard, isEvolved, run } from '../core/state';
+import { cardExtraProjectiles, cardLevel, cardMul, hasCard, isEvolved, recalcStats, run } from '../core/state';
 import { applyBleed, damageInArc, damageInCircle, healPlayer, hitEnemy } from '../world/combat';
-import { addFloatingText, addTelegraph, schedule, spawnBurst, spawnRing, spawnSlash } from '../world/effects';
+import { addFloatingText, addTelegraph, schedule, spawnBurst, spawnLine, spawnRing, spawnSlash } from '../world/effects';
 import { enemiesInRadius, nearestEnemy } from '../world/enemies';
+import { fireShot } from '../world/projectiles';
 import { addZone } from '../world/zones';
 import { registerClass } from './registry';
 
@@ -29,6 +30,11 @@ interface VampireState {
   /** Enemies already hit by the current Mist Step. */
   mistHit: Set<Enemy>;
   trailTimer: number;
+  /** Frenzy (mutation): attack-speed stacks, and seconds until they fade. */
+  frenzy: number;
+  frenzyTimer: number;
+  /** Eclipse (mutation): time to the next drain tick. */
+  drainTimer: number;
 }
 const state = (): VampireState => run.classState as VampireState;
 
@@ -46,6 +52,15 @@ const VAMPIRE_CARDS: CardDef[] = [
   { id: 'hunger_moon', name: 'Hunger Moon', part: 'ultimate', desc: 'Blood Moon lasts 3 s longer, with ×4 lifesteal instead of ×3.', ups: ['heal', 'duration'] },
   { id: 'red_moon_burst', name: 'Red Moon Burst', part: 'ultimate', desc: 'When Blood Moon ends, the Blood Shield explosion is bigger and stronger.', ups: ['damage', 'range'] },
   { id: 'thrall_moon', name: 'Thrall Moon', part: 'ultimate', desc: 'During Blood Moon, enemies you kill rise as thralls and fight for you for 5 s.', ups: ['projectiles', 'duration'] },
+  // mutations: each changes how an ability works; only one per ability in a run
+  { id: 'blood_whip', name: 'Blood Whip', part: 'strike', mutation: true, desc: 'Blood Claws become a long blood whip that hits everything in a line and pulls enemies in.', ups: ['damage', 'range', 'speed'] },
+  { id: 'frenzy', name: 'Frenzy', part: 'strike', mutation: true, desc: 'Each claw hit gives +6% attack speed, up to 10 stacks. Stop hitting for 2 s and it fades.', ups: ['speed', 'duration'] },
+  { id: 'blood_lance', name: 'Blood Lance', part: 'heavy', mutation: true, desc: 'Crimson Rend hurls a blood lance that pierces every enemy in a line and heals you per hit.', ups: ['damage', 'heal', 'projectiles'] },
+  { id: 'sanguine_nova', name: 'Sanguine Nova', part: 'heavy', mutation: true, desc: 'Crimson Rend costs 6% HP and bursts in a big blood nova that heals 2% HP per enemy hit.', ups: ['damage', 'range', 'heal'] },
+  { id: 'bat_scatter', name: 'Bat Scatter', part: 'dash', mutation: true, desc: 'Mist Step is shorter, but you burst into 4 bats that hunt enemies and heal you when they bite.', ups: ['damage', 'projectiles', 'heal'] },
+  { id: 'crimson_pounce', name: 'Crimson Pounce', part: 'dash', mutation: true, desc: 'Mist Step leaps further and lands with a claw slam that makes nearby enemies bleed.', ups: ['damage', 'range'] },
+  { id: 'eclipse', name: 'Eclipse', part: 'ultimate', mutation: true, desc: 'Blood Moon becomes a draining aura instead of ×3 lifesteal: nearby enemies bleed HP into you.', ups: ['damage', 'range', 'heal'] },
+  { id: 'night_lord', name: 'Night Lord', part: 'ultimate', mutation: true, desc: 'Blood Moon transforms you instead of ×3 lifesteal: +30% damage, attack speed and move speed.', ups: ['damage', 'speed'] },
   {
     id: 'bat_swarm', name: 'Bat Swarm', part: 'wild', desc: '2 bats circle you and bite enemies; their bites heal you.', ups: ['damage', 'projectiles', 'speed'],
     evo: { name: 'Bat Storm', desc: 'Twice as many bats, double damage, wider circle.', need: { part: 'dash' }, needText: 'any Dash card' },
@@ -89,6 +104,7 @@ registerClass({
       batAngle: 0, batPositions: [],
       rainTimer: 3, gazeTimer: 4,
       mistHit: new Set(), trailTimer: 0,
+      frenzy: 0, frenzyTimer: 0, drainTimer: 0,
     };
     run.classState = initial;
   },
@@ -100,12 +116,21 @@ registerClass({
       if (cardLevel('swift_mist') >= 5) stats.dashCharges += 1;
     }
     if (hasCard('razor_claws')) stats.attackSpeed *= cardMul('razor_claws', 'speed');
+    const cs = run.classState as VampireState | null;
+    if (!cs) return;
+    if (hasCard('frenzy')) stats.attackSpeed *= 1 + 0.06 * cardMul('frenzy', 'speed') * cs.frenzy;
+    if (hasCard('night_lord') && cs.moonTime > 0) {
+      stats.damage *= 1.3 * cardMul('night_lord', 'damage');
+      stats.attackSpeed *= 1.3 * cardMul('night_lord', 'speed');
+      stats.moveSpeed *= 1.3;
+    }
   },
 
   // ---------------------------------------------------------- Blood Shield (overheal)
 
   lifestealMul() {
-    if (state().moonTime <= 0) return 1;
+    // the ultimate mutations trade the triple lifesteal for something else
+    if (state().moonTime <= 0 || hasCard('eclipse') || hasCard('night_lord')) return 1;
     return hasCard('hunger_moon') ? 4 * cardMul('hunger_moon', 'heal') : 3;
   },
   onHeal(amount: number, silent?: boolean) {
@@ -133,18 +158,15 @@ registerClass({
     const cs = state(), p = run.player;
     cs.attackTimer -= dt;
     if (!attacking || cs.attackTimer > 0) return;
+    if (hasCard('blood_whip')) { bloodWhip(); cs.attackTimer = 0.42 / run.stats.attackSpeed; return; }
     const finisher = cs.combo === 2;
     let radius = (finisher ? 54 : 46) * run.stats.area;
     const arc = degToRad(finisher ? 140 : 100);
-    let damage = finisher ? 14 : 10;
-    if (hasCard('razor_claws')) {
-      damage *= 1.25 * cardMul('razor_claws', 'damage');
-      if (finisher) radius *= 1.2 * cardMul('razor_claws', 'range');
-    }
+    const damage = (finisher ? 14 : 10) * clawDamageMul();
+    if (hasCard('razor_claws') && finisher) radius *= 1.2 * cardMul('razor_claws', 'range');
     const hit = damageInArc(p.x, p.y, p.face, radius, arc, damage, { tag: 'claw' });
-    if (hasCard('bleeding_claws')) {
-      for (const e of hit) applyBleed(e, 3 * cardMul('bleeding_claws', 'damage'), 3 * cardMul('bleeding_claws', 'duration'));
-    }
+    clawBleed(hit);
+    if (hasCard('frenzy') && hit.length) addFrenzy();
     spawnSlash(p.x, p.y, p.face, radius, arc, VAMPIRE_RED, finisher ? 6 : 4);
     cs.combo = (cs.combo + 1) % 3;
     cs.attackTimer = 0.3 / run.stats.attackSpeed;
@@ -157,9 +179,16 @@ registerClass({
     spawnBurst(e.x, e.y, '#c2334a', 8, 100);
   },
 
-  /** Crimson Rend: lunge forward, then a wide claw that heals per enemy hit. */
+  /** Crimson Rend: lunge forward, then a wide claw that heals per enemy hit. Mutations: Blood Lance, Sanguine Nova. */
   heavy() {
     const p = run.player;
+    const extra = hasCard('twin_rend') ? 1 + cardExtraProjectiles('twin_rend') : 0;
+    if (hasCard('blood_lance')) { throwLances(1 + cardExtraProjectiles('blood_lance') + extra); return; }
+    if (hasCard('sanguine_nova')) {
+      sanguineNova(1, true);
+      for (let i = 1; i <= extra; i++) schedule(0.2 * i, () => sanguineNova(0.8, false));
+      return;
+    }
     const lunge = hasCard('rending_lunge') ? 100 * cardMul('rending_lunge', 'range') : 50;
     const a = p.face;
     p.x = clamp(p.x + Math.cos(a) * lunge, p.r, ARENA_W - p.r);
@@ -176,7 +205,11 @@ registerClass({
   dash() {
     state().mistHit = new Set();
     state().trailTimer = 0;
+    if (hasCard('bat_scatter')) releaseBats();
     return mistStepShape();
+  },
+  onDashEnd() {
+    if (hasCard('crimson_pounce')) pounceLanding();
   },
   dashShape: () => mistStepShape(),
   onDashMove(dt: number) {
@@ -204,9 +237,16 @@ registerClass({
     const cs = state();
     cs.moonTime = 8 + (hasCard('hunger_moon') ? 3 * cardMul('hunger_moon', 'duration') : 0);
     cs.moonMax = cs.moonTime;
+    if (hasCard('night_lord')) recalcStats();
   },
 
   update(dt: number) {
+    const cs = state();
+    if (cs.frenzyTimer > 0) {
+      cs.frenzyTimer -= dt;
+      if (cs.frenzyTimer <= 0) { cs.frenzy = 0; recalcStats(); }
+    }
+    updateEclipse(dt);
     updateBloodMoon(dt);
     updateBatSwarm(dt);
     updateBloodRain(dt);
@@ -245,6 +285,24 @@ registerClass({
       ctx.beginPath(); ctx.arc(m.x, m.y, 8, 0, TAU); ctx.fill();
       ctx.globalAlpha = 1;
     }
+    if (cs.moonTime > 0 && hasCard('eclipse')) {
+      const r = eclipseRadius();
+      ctx.fillStyle = 'rgba(120,10,30,0.14)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,46,77,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r - 4 + Math.sin(run.time * 4) * 3, 0, TAU); ctx.stroke();
+    }
+    if (cs.moonTime > 0 && hasCard('night_lord')) {
+      ctx.fillStyle = 'rgba(255,46,77,0.16)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 30 + Math.sin(run.time * 10) * 3, 0, TAU); ctx.fill();
+    }
+    // Frenzy stacks: red sparks circling you
+    for (let i = 0; i < cs.frenzy; i++) {
+      const a = run.time * 5 + (i * TAU) / 10;
+      ctx.fillStyle = VAMPIRE_RED;
+      ctx.fillRect(p.x + Math.cos(a) * 21 - 1.5, p.y + Math.sin(a) * 21 - 1.5, 3, 3);
+    }
     if (cs.moonTime > 0) {
       ctx.strokeStyle = 'rgba(255,46,77,0.5)';
       ctx.lineWidth = 3;
@@ -271,7 +329,136 @@ registerClass({
   },
 });
 
-const mistStepShape = (): DashOverride => ({ dist: 140 * (hasCard('mist_form') ? cardMul('mist_form', 'range') : 1) });
+/**
+ * How far Mist Step goes: Bat Scatter is short, Crimson Pounce is a long leap. Used by both `dash` and
+ * `dashShape`, so online prediction moves the same way.
+ */
+function mistStepShape(): DashOverride {
+  const range = hasCard('mist_form') ? cardMul('mist_form', 'range') : 1;
+  if (hasCard('bat_scatter')) return { dist: 90 * range };
+  if (hasCard('crimson_pounce')) return { dist: 190 * range * cardMul('crimson_pounce', 'range'), dur: 0.22 };
+  return { dist: 140 * range };
+}
+
+/** Razor Claws' damage bonus, shared by every form of the Strike. */
+const clawDamageMul = (): number => (hasCard('razor_claws') ? 1.25 * cardMul('razor_claws', 'damage') : 1);
+
+/** Bleeding Claws: enemies hit by any form of the Strike start bleeding. */
+function clawBleed(hit: Enemy[]): void {
+  if (!hasCard('bleeding_claws')) return;
+  for (const e of hit) applyBleed(e, 3 * cardMul('bleeding_claws', 'damage'), 3 * cardMul('bleeding_claws', 'duration'));
+}
+
+/** Blood Whip (mutation): a long lash along your aim that pulls everything it hits toward you. */
+function bloodWhip(): void {
+  const p = run.player, c = Math.cos(p.face), s = Math.sin(p.face);
+  const len = 150 * run.stats.area * cardMul('blood_whip', 'range') * (hasCard('razor_claws') ? cardMul('razor_claws', 'range') : 1);
+  const ex = p.x + c * len, ey = p.y + s * len, damage = 9 * clawDamageMul() * cardMul('blood_whip', 'damage');
+  const hit: Enemy[] = [];
+  for (const e of enemiesInRadius((p.x + ex) / 2, (p.y + ey) / 2, len / 2)) {
+    const along = (e.x - p.x) * c + (e.y - p.y) * s, side = Math.abs(-(e.x - p.x) * s + (e.y - p.y) * c);
+    if (along <= 0 || along >= len || side >= e.r + 10) continue;
+    hitEnemy(e, damage, { tag: 'claw', knock: 12, knockAngle: Math.atan2(p.y - e.y, p.x - e.x) });
+    hit.push(e);
+  }
+  clawBleed(hit);
+  spawnLine(p.x, p.y, ex, ey, VAMPIRE_RED, 4);
+}
+
+/** Frenzy: one more stack (max 10); the stacks fade 2 s after your last hit. */
+function addFrenzy(): void {
+  const cs = state();
+  cs.frenzyTimer = 2 * cardMul('frenzy', 'duration');
+  if (cs.frenzy < 10) { cs.frenzy++; recalcStats(); }
+}
+
+/** Crimson Rend's damage, with the Heavy cards that boost it. */
+function rendDamage(mult: number): number {
+  let damage = 10 * 0.55 * mult * 2.2;
+  if (hasCard('rending_lunge')) damage *= 1.3 * cardMul('rending_lunge', 'damage');
+  if (hasCard('twin_rend')) damage *= cardMul('twin_rend', 'damage');
+  return damage;
+}
+
+/** Healing per enemy hit by a Crimson Rend (more with Feeding Rend). */
+function rendHealPerHit(): number {
+  let heal = 0.01 * run.stats.maxHp;
+  if (hasCard('feeding_rend')) heal += 0.01 * run.stats.maxHp * cardMul('feeding_rend', 'heal') * cardMul('feeding_rend', 'effect');
+  return heal;
+}
+
+/** Blood Lance (mutation): piercing lances along your aim; each enemy pierced heals you. */
+function throwLances(count: number): void {
+  const p = run.player, damage = rendDamage(1.1) * cardMul('blood_lance', 'damage');
+  const heal = rendHealPerHit() * 0.8 * cardMul('blood_lance', 'heal');
+  for (let i = 0; i < count; i++) {
+    const a = p.face + (i - (count - 1) / 2) * 0.14;
+    fireShot({
+      x: p.x, y: p.y, vx: Math.cos(a) * 650, vy: Math.sin(a) * 650, r: 6, pierce: 99, heavy: true,
+      dmg: damage, life: 0.55, color: VAMPIRE_DEEP_RED, kind: 'heavybolt', tag: 'rend',
+      onHit: (_shot, e) => {
+        healPlayer(heal, true);
+        if (hasCard('rending_lunge')) applyBleed(e, 4, 3 * cardMul('rending_lunge', 'duration'));
+      },
+    });
+  }
+}
+
+/** Sanguine Nova (mutation): pay 6% max HP (never below 1), then a blood nova that heals per enemy hit. */
+function sanguineNova(mult: number, pay: boolean): void {
+  const p = run.player;
+  if (pay) {
+    const cost = Math.min(p.hp - 1, run.stats.maxHp * 0.06);
+    if (cost > 0) { p.hp -= cost; addFloatingText(p.x, p.y - 26, '-' + Math.round(cost), VAMPIRE_DEEP_RED, 11); }
+  }
+  const radius = 120 * run.stats.area * cardMul('sanguine_nova', 'range');
+  const hit = damageInCircle(p.x, p.y, radius, rendDamage(mult) * 1.6 * cardMul('sanguine_nova', 'damage'), { heavy: true, tag: 'rend', color: VAMPIRE_RED });
+  if (hit.length) healPlayer((0.02 * run.stats.maxHp * cardMul('sanguine_nova', 'heal') + rendHealPerHit() - 0.01 * run.stats.maxHp) * hit.length);
+  if (hasCard('rending_lunge')) for (const e of hit) applyBleed(e, 4, 3 * cardMul('rending_lunge', 'duration'));
+  spawnRing(p.x, p.y, radius, VAMPIRE_DEEP_RED);
+  spawnBurst(p.x, p.y, VAMPIRE_DEEP_RED, 18, 180);
+}
+
+/** Bat Scatter (mutation): bats fan out from you and home in on enemies; each bite heals. */
+function releaseBats(): void {
+  const p = run.player, count = 4 + cardExtraProjectiles('bat_scatter');
+  const damage = 8 * cardMul('bat_scatter', 'damage') * (hasCard('mist_form') ? cardMul('mist_form', 'damage') : 1);
+  for (let i = 0; i < count; i++) {
+    const a = p.face + ((i + 0.5) / count - 0.5) * Math.PI * 1.4;
+    fireShot({
+      x: p.x, y: p.y, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, r: 4, home: 7,
+      dmg: damage, life: 1.6, color: '#d9a2ff', tag: 'bat',
+      onHit: () => healPlayer(cardMul('bat_scatter', 'heal'), true),
+    });
+  }
+}
+
+/** Crimson Pounce (mutation): the leap lands with a claw slam; everything nearby starts bleeding. */
+function pounceLanding(): void {
+  const p = run.player, radius = 70 * run.stats.area * cardMul('crimson_pounce', 'range');
+  const damage = 16 * cardMul('crimson_pounce', 'damage') * (hasCard('mist_form') ? cardMul('mist_form', 'damage') : 1);
+  const hit = damageInCircle(p.x, p.y, radius, damage, { tag: 'claw', color: VAMPIRE_RED });
+  for (const e of hit) applyBleed(e, 4, 3);
+  if (hit.length) healPlayer(hit.length, true);
+  spawnRing(p.x, p.y, radius, VAMPIRE_RED);
+  spawnBurst(p.x, p.y, VAMPIRE_DEEP_RED, 10, 120);
+}
+
+const eclipseRadius = (): number => 150 * run.stats.area * cardMul('eclipse', 'range');
+
+/** Eclipse (mutation): during Blood Moon, enemies near you lose HP every 0.25 s and 30% of it heals you. */
+function updateEclipse(dt: number): void {
+  const cs = state(), p = run.player;
+  if (cs.moonTime <= 0 || !hasCard('eclipse')) return;
+  cs.drainTimer -= dt;
+  if (cs.drainTimer > 0) return;
+  cs.drainTimer = 0.25;
+  let drained = 0;
+  for (const e of enemiesInRadius(p.x, p.y, eclipseRadius())) {
+    drained += hitEnemy(e, 16 * 0.25 * cardMul('eclipse', 'damage'), { dot: true, silent: true, noSteal: true });
+  }
+  if (drained > 0) healPlayer(drained * 0.3 * cardMul('eclipse', 'heal'), true);
+}
 
 function shieldCap(): number {
   return run.stats.maxHp * (state().moonTime > 0 ? 1 : SHIELD_CAP_FRAC);
@@ -279,14 +466,9 @@ function shieldCap(): number {
 
 function crimsonRend(mult: number): void {
   const p = run.player;
-  let damage = 10 * 0.55 * mult * 2.2;
-  if (hasCard('rending_lunge')) damage *= 1.3 * cardMul('rending_lunge', 'damage');
-  if (hasCard('twin_rend')) damage *= cardMul('twin_rend', 'damage');
   const radius = 62 * run.stats.area * (hasCard('rending_lunge') ? cardMul('rending_lunge', 'range') : 1);
-  const hit = damageInArc(p.x, p.y, p.face, radius, REND_ARC, damage, { heavy: true, tag: 'rend', color: VAMPIRE_RED });
-  let healPerHit = 0.01 * run.stats.maxHp;
-  if (hasCard('feeding_rend')) healPerHit += 0.01 * run.stats.maxHp * cardMul('feeding_rend', 'heal') * cardMul('feeding_rend', 'effect');
-  if (hit.length) healPlayer(healPerHit * hit.length);
+  const hit = damageInArc(p.x, p.y, p.face, radius, REND_ARC, rendDamage(mult), { heavy: true, tag: 'rend', color: VAMPIRE_RED });
+  if (hit.length) healPlayer(rendHealPerHit() * hit.length);
   if (hasCard('rending_lunge')) for (const e of hit) applyBleed(e, 4, 3 * cardMul('rending_lunge', 'duration'));
   spawnSlash(p.x, p.y, p.face, radius, REND_ARC, VAMPIRE_DEEP_RED, 7);
 }
@@ -304,6 +486,7 @@ function updateBloodMoon(dt: number): void {
   spawnBurst(p.x, p.y, VAMPIRE_DEEP_RED, 30, 220);
   run.shake = 8;
   cs.shield = Math.min(cs.shield, run.stats.maxHp * SHIELD_CAP_FRAC);
+  if (hasCard('night_lord')) recalcStats(); // the transformation ends
 }
 
 function updateBatSwarm(dt: number): void {
