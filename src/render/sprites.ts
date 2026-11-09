@@ -1,14 +1,15 @@
-// ============================================================ hero sprites
-// Pixel-art sprites for the player classes (see assets/sprites/CREDITS.md). Two kinds:
+// ============================================================ hero and monster sprites
+// Pixel-art sprites for the player classes and some monsters (see assets/sprites/CREDITS.md).
+// Monsters: `drawEnemySprite` (one image per enemy type, e.g. the slimes). Heroes come in two kinds:
 //   - 8-direction sets (one image per facing, e.g. assets/sprites/traveler/), tried first
 //   - the placeholder sheet heroes.png (a free CC0 pack: down / up / side, with walk frames)
 //
 // Self-contained on purpose, so it is easy to remove:
-//   - switch off: set SPRITES_ENABLED to false (heroes go back to coloured circles)
-//   - remove completely: delete this file and assets/sprites/, and the one `drawHeroSprite` call in render/world.ts
+//   - switch off: set SPRITES_ENABLED to false (heroes go back to coloured circles, monsters to shapes)
+//   - remove completely: delete this file and assets/sprites/, and the `drawHeroSprite` / `drawEnemySprite` calls in render/world.ts
 // Without a sprite (switched off, image not loaded yet, a class with no row, or headless tests)
 // `drawHeroSprite` returns false and the caller draws the old circle.
-import type { Player } from '../types';
+import type { EnemyTypeId, Player } from '../types';
 import { ctx } from '../core/canvas';
 import heroSheetUrl from '../../assets/sprites/heroes.png';
 import travelerE from '../../assets/sprites/traveler/east.png';
@@ -35,6 +36,7 @@ import bountyW from '../../assets/sprites/bounty_hunter/west.png';
 import bountyNW from '../../assets/sprites/bounty_hunter/north-west.png';
 import bountyN from '../../assets/sprites/bounty_hunter/north.png';
 import bountyNE from '../../assets/sprites/bounty_hunter/north-east.png';
+import slimeUrl from '../../assets/sprites/slime/slime.png';
 
 export const SPRITES_ENABLED = true;
 
@@ -169,6 +171,69 @@ export function drawHeroSprite(p: Player, classId: string, time: number): boolea
   ctx.translate(p.x, p.y + p.r + 4);
   if (dir === 'side' && Math.cos(p.face) < 0) ctx.scale(-1, 1); // the sheet faces right: mirror to face left
   ctx.drawImage(sheet, col * FRAME, info.row * FRAME, FRAME, FRAME, -size / 2, -size, size, size);
+  ctx.restore();
+  return true;
+}
+
+// ------------------------------------------------------------ enemy sprites
+
+
+/** Monster images (one facing: they look the same from every side). Keyed by enemy type. */
+const ENEMY_SPRITES: Partial<Record<EnemyTypeId, string>> = {
+  slime: slimeUrl,
+  mini: slimeUrl,
+  bigslime: slimeUrl,
+};
+/** How big the sprite is drawn, as a multiple of the enemy's radius (the art fills its whole canvas). */
+const ENEMY_DRAW_SCALE = 2.6;
+
+interface LoadedSprite { img: HTMLImageElement; white: HTMLCanvasElement | null; ready: boolean }
+const enemyImages: Record<string, LoadedSprite> = {};
+
+/** The image for a url, loading it (and a white silhouette for hit flashes) on first use. */
+function loadedSprite(url: string): LoadedSprite | null {
+  if (typeof Image === 'undefined') return null; // headless tests have no Image
+  let entry = enemyImages[url];
+  if (!entry) {
+    const img = new Image();
+    const e: LoadedSprite = (entry = enemyImages[url] = { img, white: null, ready: false });
+    img.onload = () => { e.white = whiteSilhouette(img); e.ready = true; };
+    img.src = url;
+  }
+  return entry.ready ? entry : null;
+}
+
+/** The image's shape filled with white, for the hit flash (null without a real DOM, e.g. headless tests). */
+function whiteSilhouette(img: HTMLImageElement): HTMLCanvasElement | null {
+  if (typeof document.createElement !== 'function') return null;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  if (g) {
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, c.width, c.height);
+  }
+  return c;
+}
+
+/**
+ * Draw an enemy's sprite centred at the origin (the caller has translated to the enemy), squishing it
+ * like the old blob. Returns false when there is no sprite, so the caller draws the old shape.
+ */
+export function drawEnemySprite(type: EnemyTypeId, r: number, wobble: number, time: number, flashing: boolean): boolean {
+  if (!SPRITES_ENABLED) return false;
+  const url = ENEMY_SPRITES[type];
+  const sprite = url ? loadedSprite(url) : null;
+  if (!sprite) return false;
+  const size = r * ENEMY_DRAW_SCALE;
+  const squish = 1 + 0.06 * Math.sin(time * 5 + wobble);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false; // keep pixels crisp
+  ctx.translate(0, r); // squish from the ground up
+  ctx.scale(squish, 1 / squish);
+  ctx.drawImage(flashing && sprite.white ? sprite.white : sprite.img, -size / 2, -size, size, size);
   ctx.restore();
   return true;
 }

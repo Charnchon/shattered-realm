@@ -234,6 +234,7 @@ test('sprites: every class draws its own row of the hero sheet, facing and walki
   // face each hero a different way, and make half of them walk
   const faces = [Math.PI / 2, -Math.PI / 2, 0, Math.PI, Math.PI / 2, 0];
   heroes.forEach((h, i) => { h.player.face = faces[i]; h.player.moveX = i % 2; });
+  sr.run.enemies.length = 0; // only heroes on screen (slimes have sprites too)
   sr.render(); // starts the image loads
   counter.images.length = 0; counter.imageCalls.length = 0;
   sr.render();
@@ -250,6 +251,7 @@ for (const classId of ['traveler', 'bounty_hunter', 'vampire']) test(`sprites: t
   const { sr, counter } = loadGame({ images: true });
   sr.newRun(classId);
   const p = sr.run.player;
+  sr.run.enemies.length = 0; // only the hero on screen (slimes have sprites too)
   sr.render(); // starts the image loads
   const seen = new Set();
   for (let i = 0; i < 8; i++) {
@@ -261,6 +263,22 @@ for (const classId of ['traveler', 'bounty_hunter', 'vampire']) test(`sprites: t
     seen.add(call.img);
   }
   assert.equal(seen.size, 8, 'a different image for each of the 8 directions');
+});
+
+test('sprites: all three slime sizes draw the slime sprite, scaled to their size', () => {
+  const { sr, counter } = loadGame({ images: true });
+  sr.newRun('oathknight'); // a sheet hero, so the only whole-image draws are monsters
+  sr.run.enemies.length = 0;
+  const p = sr.run.player;
+  const slimes = ['mini', 'slime', 'bigslime'].map((type, i) => sr.spawnEnemy(type, p.x + 80 + i * 60, p.y, false));
+  sr.render(); // starts the image loads
+  counter.images.length = 0; counter.imageCalls.length = 0;
+  sr.render();
+  const whole = counter.imageCalls.map((c, i) => ({ ...c, size: counter.images[i][2] })).filter((c) => c.argc === 5);
+  assert.equal(whole.length, 3, 'one sprite per slime');
+  assert.equal(new Set(whole.map((c) => c.img)).size, 1, 'the same slime image for every size');
+  const sizes = whole.map((c) => c.size).sort((a, b) => a - b);
+  assert.deepEqual(sizes, slimes.map((e) => e.r * 2.6).sort((a, b) => a - b), 'drawn at 2.6x each radius');
 });
 
 test('sprites: without images (or switched off) heroes fall back to circles', () => {

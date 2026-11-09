@@ -4,7 +4,7 @@ import { ctx } from '../core/canvas';
 import { ARENA_H, ARENA_W, COLOR, TAU, VIEW_H, VIEW_W } from '../core/constants';
 import { run, withHero } from '../core/state';
 import { diamondPath, drawBar, drawPixelText } from './primitives';
-import { drawHeroSprite } from './sprites';
+import { drawEnemySprite, drawHeroSprite } from './sprites';
 import { drawDarkness, drawHazards } from './mapscreen';
 import { mapDef } from '../world/maps';
 import { HOSTILE_RED, STRIKE_TIME } from '../world/enemies';
@@ -523,7 +523,7 @@ function drawEnemy(e: Enemy): void {
   if (e.rootTime > 0) { ctx.strokeStyle = COLOR.gold; ctx.lineWidth = 2; ctx.strokeRect(-r - 3, r - 2, r * 2 + 6, 4); }
   ctx.fillStyle = col;
   if (e.boss) drawBossShape(e);
-  else ENEMY_SHAPES[e.type](e, r, col, flashing);
+  else if (!drawEnemySprite(e.type, r, e.wobble, run.time, flashing)) ENEMY_SHAPES[e.type](e, r, col, flashing);
   ctx.restore();
   // health bar for tougher enemies once damaged
   if (!e.boss && e.hp < e.maxHp && (e.elite || e.maxHp > 30)) drawBar(e.x - 14, e.y - e.r - 9, 28, 3, e.hp / e.maxHp, COLOR.ember, COLOR.barBg);

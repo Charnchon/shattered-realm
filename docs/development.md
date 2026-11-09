@@ -89,9 +89,13 @@ Player classes are drawn from `assets/sprites/heroes.png` (free CC0 art, see `as
 failure to load the image, falls back to the coloured circle. To give a new class a sprite, add its 11 frames as a
 new row in `heroes.png` and a line in `HERO_ROWS`.
 
+Monsters can have a sprite too: `ENEMY_SPRITES` maps an enemy type to one image (the slimes use
+`assets/sprites/slime/slime.png`), drawn at `ENEMY_DRAW_SCALE` × the enemy's radius with a white silhouette when hit.
+Types without an entry keep their drawn shape in `ENEMY_SHAPES` (`src/render/world.ts`).
+
 - Switch off: `SPRITES_ENABLED = false` in `src/render/sprites.ts`.
-- Remove: delete `src/render/sprites.ts` and `assets/sprites/`, and the `drawHeroSprite` import + call in
-  `src/render/world.ts`.
+- Remove: delete `src/render/sprites.ts` and `assets/sprites/`, and the `drawHeroSprite` / `drawEnemySprite` imports
+  and calls in `src/render/world.ts`.
 
 ### Lock a class behind a milestone
 
